@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<title>Seguimiento Marketing · Musicala</title>
+
+<link rel="stylesheet" href="./styles.css?v=20260424-2" />
+
+</head>
+
+<body>
+
+<!-- ================= HEADER ================= -->
+
+<header class="app-header">
+
+  <div class="logo-container">
+    <img src="./logo.png" class="logo" />
+    <div class="title-block">
+      <h1>Seguimiento de Campañas</h1>
+      <span class="subtitle">Musicala Marketing Control</span>
+    </div>
+  </div>
+
+  <div id="globalKPIs" class="header-kpis">
+    <!-- render dinámico -->
+  </div>
+
+</header>
+
+<!-- ================= NAV ================= -->
+
+<nav class="tabs">
+
+  <button class="tab active" data-view="dashboard">
+    Dashboard
+  </button>
+
+  <button class="tab" data-view="campaigns">
+    Campañas
+  </button>
+
+  <button class="tab" data-view="metrics">
+    Métricas
+  </button>
+
+</nav>
+
+<!-- ================= MAIN ================= -->
+
+<main id="app">
+
+  <!-- DASHBOARD -->
+  <section id="view-dashboard" class="view active">
+
+    <div class="dashboard-grid">
+
+      <div class="card kpi-card">
+        <h3>Resumen general</h3>
+        <div id="dashboardKPIs"></div>
+      </div>
+
+      <div class="card">
+        <h3>Gasto vs Resultados</h3>
+        <div id="performanceSummary"></div>
+      </div>
+
+      <div class="card">
+        <h3>Ranking campañas</h3>
+        <div id="rankingTable"></div>
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- CAMPAIGNS -->
+  <section id="view-campaigns" class="view">
+
+    <div class="page-header">
+      <h2>Campañas</h2>
+      <button id="btnNewCampaign" class="primary">
+        Nueva campaña
+      </button>
+    </div>
+
+    <div class="card">
+
+      <table class="data-table">
+
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Canal</th>
+            <th>Objetivo</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+
+        <tbody id="campaignTable">
+        </tbody>
+
+      </table>
+
+    </div>
+
+  </section>
+
+
+  <!-- METRICS -->
+  <section id="view-metrics" class="view">
+
+    <div class="page-header">
+      <h2>Registro de Métricas</h2>
+    </div>
+
+    <div class="metrics-grid">
+
+      <div class="card">
+
+        <h3>Agregar registro</h3>
+
+        <form id="metricsForm">
+
+          <label>Campaña</label>
+          <select id="metricCampaign"></select>
+
+          <label>Fecha</label>
+          <input type="date" id="metricDate" required />
+
+          <label>Gasto reportado por Ads</label>
+          <input type="number" id="metricSpend" />
+
+          <label>Mensajes iniciados</label>
+          <input type="number" id="metricLeads" />
+
+          <label>Clics en el enlace</label>
+          <input type="number" id="metricClicks" />
+
+          <label>Reproducciones</label>
+          <input type="number" id="metricVideoPlays" />
+
+          <label>Espectadores / alcance</label>
+          <input type="number" id="metricViewers" />
+
+          <label>Interacciones con la publicacion</label>
+          <input type="number" id="metricPostInteractions" />
+
+          <label>Guardados</label>
+          <input type="number" id="metricSaves" />
+
+          <label>Compartidos</label>
+          <input type="number" id="metricShares" />
+
+          <label>Comentarios</label>
+          <input type="number" id="metricComments" />
+
+          <label>Ventas / matrículas confirmadas</label>
+          <input type="number" id="metricSales" />
+
+          <button type="submit" class="primary">
+            Guardar
+          </button>
+
+        </form>
+
+      </div>
+
+      <div class="card">
+
+        <h3>Histórico reciente</h3>
+
+        <div id="metricsTable"></div>
+
+      </div>
+
+    </div>
+
+  </section>
+
+</main>
+
+<div id="campaignModal" class="modal hidden" aria-hidden="true">
+  <div class="modal-backdrop" data-action="close-campaign-modal"></div>
+  <form id="campaignForm" class="modal-panel">
+    <div class="modal-header">
+      <div>
+        <h2 id="campaignModalTitle">Nueva campaña</h2>
+        <p>Los datos se quedan aqui aunque cambies de pestaña para confirmar informacion.</p>
+      </div>
+      <button type="button" class="icon-button" data-action="close-campaign-modal" aria-label="Cerrar">×</button>
+    </div>
+
+    <input type="hidden" id="campaignId" />
+
+    <div class="form-grid">
+      <label>
+        Nombre
+        <input id="campaignName" type="text" required />
+      </label>
+
+      <label>
+        Canal
+        <input id="campaignChannel" type="text" placeholder="Meta / Google Ads" />
+      </label>
+
+      <label>
+        Plataforma
+        <input id="campaignPlatform" type="text" placeholder="Business Meta / Google Search" />
+      </label>
+
+      <label>
+        Objetivo
+        <input id="campaignObjective" type="text" placeholder="Leads / Mensajes / Conversiones" />
+      </label>
+
+      <label>
+        Servicio
+        <input id="campaignService" type="text" placeholder="Talleres, cursos, clases..." />
+      </label>
+
+      <label>
+        Modalidad
+        <input id="campaignMode" type="text" placeholder="Sede / Hogar / Virtual" />
+      </label>
+
+      <label>
+        Fecha inicio
+        <input id="campaignStart" type="date" />
+      </label>
+
+      <label>
+        Fecha fin
+        <input id="campaignEnd" type="date" />
+      </label>
+
+      <label>
+        Estado
+        <select id="campaignStatus">
+          <option value="Activa">Activa</option>
+          <option value="Pausada">Pausada</option>
+          <option value="Finalizada">Finalizada</option>
+        </select>
+      </label>
+
+      <label>
+        Modelo de cobro
+        <input id="campaignBillingModel" type="text" placeholder="Meta cobro total / Google Ads diario" />
+      </label>
+
+      <label>
+        Gasto Ads sin IVA
+        <input id="campaignAdsSpend" type="number" min="0" step="1" inputmode="decimal" />
+      </label>
+
+      <label>
+        IVA cobrado
+        <input id="campaignTax" type="number" min="0" step="1" inputmode="decimal" />
+      </label>
+
+      <label>
+        Cobro real total
+        <input id="campaignTotalCharge" type="number" min="0" step="1" inputmode="decimal" />
+      </label>
+
+      <label>
+        Presupuesto mensual
+        <input id="campaignMonthlyBudget" type="number" min="0" step="1" inputmode="decimal" />
+      </label>
+    </div>
+
+    <label>
+      Notas
+      <textarea id="campaignNotes" rows="3"></textarea>
+    </label>
+
+    <div class="modal-actions">
+      <button type="button" data-action="close-campaign-modal">Cancelar</button>
+      <button type="submit" class="primary">Guardar campaña</button>
+    </div>
+  </form>
+</div>
+
+
+<!-- ================= SCRIPTS ================= -->
+
+<script src="./utils.js?v=20260424-2"></script>
+<script src="./state.js?v=20260424-2"></script>
+<script src="./api.js?v=20260424-2"></script>
+<script src="./ui.js?v=20260424-2"></script>
+<script src="./charts.js?v=20260424-2"></script>
+<script src="./app.js?v=20260424-2"></script>
+
+</body>
+</html>
