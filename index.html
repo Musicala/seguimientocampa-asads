@@ -6,7 +6,7 @@
 
 <title>Seguimiento Marketing · Musicala</title>
 
-<link rel="stylesheet" href="./styles.css?v=20260424-2" />
+<link rel="stylesheet" href="./styles.css?v=20260428-1" />
 
 </head>
 
@@ -253,8 +253,14 @@
       </label>
 
       <label>
+        Presupuesto diario
+        <input id="campaignDailyBudget" type="number" min="0" step="1" inputmode="decimal" placeholder="Ej: 15000" />
+        <small class="field-hint">Para Google Ads puedes crear la campana solo con este dato y registrar el gasto real despues.</small>
+      </label>
+
+      <label>
         Gasto Ads sin IVA
-        <input id="campaignAdsSpend" type="number" min="0" step="1" inputmode="decimal" />
+        <input id="campaignAdsSpend" type="number" min="0" step="1" inputmode="decimal" placeholder="Opcional al inicio" />
       </label>
 
       <label>
@@ -291,9 +297,9 @@
 <script src="./utils.js?v=20260424-2"></script>
 <script src="./state.js?v=20260424-2"></script>
 <script src="./api.js?v=20260424-2"></script>
-<script src="./ui.js?v=20260424-2"></script>
+<script src="./ui.js?v=20260428-1"></script>
 <script src="./charts.js?v=20260424-2"></script>
-<script src="./app.js?v=20260424-2"></script>
+<script src="./app.js?v=20260428-1"></script>
 
 </body>
 </html>

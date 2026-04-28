@@ -111,6 +111,7 @@ const UI = (() => {
         <td>
           <div style="font-weight:700">${esc_(c.nombre || "")}</div>
           <div class="muted" style="font-size:12px">${esc_(c.campaign_id || "")}</div>
+          ${num_(c.presupuesto_diario) > 0 ? `<div class="muted" style="font-size:12px">Presupuesto diario: ${moneyCOP_(c.presupuesto_diario)}</div>` : ""}
           ${num_(c.cobro_total) > 0 ? `<div class="muted" style="font-size:12px">Cobro real: ${moneyCOP_(c.cobro_total)}</div>` : ""}
         </td>
         <td>${esc_(c.canal || "")}</td>

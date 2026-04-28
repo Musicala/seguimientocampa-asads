@@ -150,6 +150,10 @@
     if (btnNew) btnNew.addEventListener('click', onNewCampaign_);
     const form = $('campaignForm');
     if (form) form.addEventListener('submit', onSubmitCampaign_);
+    ['campaignPlatform', 'campaignChannel'].forEach(id => {
+      const el = $(id);
+      if (el) el.addEventListener('input', applyCampaignPlatformDefaults_);
+    });
     document.querySelectorAll('[data-action="close-campaign-modal"]').forEach(el => {
       el.addEventListener('click', closeCampaignModal_);
     });
@@ -216,6 +220,7 @@
     setCampaignFormValue_('campaignEnd', normalizeDateInput_(campaign?.fecha_fin));
     setCampaignFormValue_('campaignStatus', campaign?.estado || 'Activa');
     setCampaignFormValue_('campaignBillingModel', campaign?.modelo_cobro || '');
+    setCampaignFormValue_('campaignDailyBudget', campaign?.presupuesto_diario || '');
     setCampaignFormValue_('campaignAdsSpend', campaign?.gasto_ads_total || campaign?.reported_spend || '');
     setCampaignFormValue_('campaignTax', campaign?.iva_total || '');
     setCampaignFormValue_('campaignTotalCharge', campaign?.cobro_total || '');
@@ -224,6 +229,7 @@
 
     modal.classList.remove('hidden');
     modal.setAttribute('aria-hidden', 'false');
+    applyCampaignPlatformDefaults_();
     $('campaignName')?.focus();
   }
 
@@ -250,6 +256,7 @@
       fecha_inicio: $('campaignStart')?.value || toISODate(new Date()),
       fecha_fin: $('campaignEnd')?.value || '',
       estado: strForm_('campaignStatus') || 'Activa',
+      presupuesto_diario: parseNum($('campaignDailyBudget')?.value),
       presupuesto_mensual: parseNum($('campaignMonthlyBudget')?.value),
       modelo_cobro: strForm_('campaignBillingModel'),
       gasto_ads_total: parseNum($('campaignAdsSpend')?.value),
@@ -258,6 +265,17 @@
       responsable: '',
       notas: strForm_('campaignNotes'),
     };
+  }
+
+  function applyCampaignPlatformDefaults_() {
+    const channel = strForm_('campaignChannel').toLowerCase();
+    const platform = strForm_('campaignPlatform').toLowerCase();
+    const billingEl = $('campaignBillingModel');
+    const isGoogleAds = channel.includes('google') || platform.includes('google');
+
+    if (isGoogleAds && billingEl && !String(billingEl.value || '').trim()) {
+      billingEl.value = 'Google Ads diario';
+    }
   }
 
   function setCampaignFormValue_(id, value) {
@@ -397,6 +415,7 @@
         <td>
           <div style="font-weight:700">${escapeHtml(c.nombre || '')}</div>
           <div class="muted" style="font-size:12px">${escapeHtml(c.campaign_id || '')}</div>
+          ${parseNum(c.presupuesto_diario) > 0 ? `<div class="muted" style="font-size:12px">Presupuesto diario: ${moneyCOP(c.presupuesto_diario)}</div>` : ''}
           ${parseNum(c.cobro_total) > 0 ? `<div class="muted" style="font-size:12px">Cobro real: ${moneyCOP(c.cobro_total)}</div>` : ''}
         </td>
         <td>${escapeHtml(c.canal || '')}</td>
