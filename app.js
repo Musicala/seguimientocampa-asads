@@ -100,6 +100,7 @@
     } else {
       fillSelectFallback_($('metricCampaign'), App.campaigns);
     }
+    updateMetricPlatformUI_();
 
     // Default fecha del formulario
     const dateEl = $('metricDate');
@@ -181,6 +182,7 @@
 
   async function onSubmitCampaign_(ev) {
     ev.preventDefault();
+    const btn = $('campaignSaveBtn') || ev.submitter || $('campaignForm')?.querySelector('button[type="submit"]');
 
     const payload = readCampaignForm_();
     if (!payload.nombre) {
@@ -247,6 +249,7 @@
     return {
       _isEdit: isEdit,
       campaign_id: id || makeCampaignId_(),
+      fecha_creacion: isEdit ? '' : toISODate(new Date()),
       nombre: strForm_('campaignName'),
       canal: strForm_('campaignChannel'),
       plataforma: strForm_('campaignPlatform'),
@@ -255,6 +258,7 @@
       modalidad: strForm_('campaignMode'),
       fecha_inicio: $('campaignStart')?.value || toISODate(new Date()),
       fecha_fin: $('campaignEnd')?.value || '',
+      tipo_duracion: $('campaignEnd')?.value ? 'Con fecha de finalizaci?n' : 'Continua',
       estado: strForm_('campaignStatus') || 'Activa',
       presupuesto_diario: parseNum($('campaignDailyBudget')?.value),
       presupuesto_mensual: parseNum($('campaignMonthlyBudget')?.value),
@@ -305,38 +309,24 @@
 
     if (window.UI?.fillCampaignSelect) UI.fillCampaignSelect('metricCampaign', App.campaigns);
     else fillSelectFallback_($('metricCampaign'), App.campaigns);
+    updateMetricPlatformUI_();
   }
 
   // ---------- METRICS ----------
   function wireMetrics_() {
     const form = $('metricsForm');
     if (form) form.addEventListener('submit', onSubmitMetric_);
+    const select = $('metricCampaign');
+    if (select) select.addEventListener('change', updateMetricPlatformUI_);
   }
 
   async function onSubmitMetric_(ev) {
     ev.preventDefault();
-
-    const payload = {
-      campaign_id: $('metricCampaign')?.value || '',
-      date: $('metricDate')?.value || '',
-      spend: parseNum($('metricSpend')?.value),
-      impressions: parseInt($('metricVideoPlays')?.value || '0', 10) || 0,
-      clicks: parseInt($('metricClicks')?.value || '0', 10) || 0,
-      leads: parseInt($('metricLeads')?.value || '0', 10) || 0,
-      sales: parseInt($('metricSales')?.value || '0', 10) || 0,
-      revenue: 0,
-      video_plays: parseInt($('metricVideoPlays')?.value || '0', 10) || 0,
-      viewers: parseInt($('metricViewers')?.value || '0', 10) || 0,
-      link_clicks: parseInt($('metricClicks')?.value || '0', 10) || 0,
-      post_interactions: parseInt($('metricPostInteractions')?.value || '0', 10) || 0,
-      saves: parseInt($('metricSaves')?.value || '0', 10) || 0,
-      shares: parseInt($('metricShares')?.value || '0', 10) || 0,
-      comments: parseInt($('metricComments')?.value || '0', 10) || 0,
-      notes: '',
-    };
+    const btn = $('metricSaveBtn') || ev.submitter;
+    const payload = readMetricForm_();
 
     if (!payload.campaign_id) {
-      UIx.toast('Selecciona una campaña', 'warning');
+      UIx.toast('Selecciona una campa?a', 'warning');
       return;
     }
     if (!payload.date) {
@@ -344,21 +334,156 @@
       return;
     }
 
-    const res = await safeCall_(() => API.addMetric(payload));
-    if (!res?.ok) {
-      UIx.toast(res?.error || 'No se pudo guardar métrica', 'error');
+    const validationError = validateMetricPayload_(payload);
+    if (validationError) {
+      UIx.toast(validationError, 'warning');
       return;
     }
 
-    UIx.toast('Métrica guardada OK', 'success');
+    setButtonLoading(btn, true, 'Guardando...');
+    try {
+      const res = await safeCall_(() => API.addMetric(payload));
+      if (!res?.ok) {
+        UIx.toast(res?.error || 'No se pudo guardar m?trica', 'error');
+        return;
+      }
 
-    // Limpiar campos numericos
-    ['metricSpend','metricLeads','metricClicks','metricVideoPlays','metricViewers','metricPostInteractions','metricSaves','metricShares','metricComments','metricSales']
-      .forEach(id => { const el = $(id); if (el) el.value = ''; });
+      UIx.toast('M?trica guardada OK', 'success');
+      clearMetricFormAfterSave_();
+      await refreshRecentMetrics_();
+      await refreshDashboard_();
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  }
 
-    // Refrescar historico + dashboard
-    await refreshRecentMetrics_();
-    await refreshDashboard_();
+  function readMetricForm_() {
+    const campaign = getSelectedCampaign_();
+    const platformType = getCampaignPlatformType_(campaign);
+    const spend = platformType === 'google'
+      ? parseNum($('metricGoogleCost')?.value)
+      : platformType === 'general'
+        ? parseNum($('metricGeneralSpend')?.value)
+        : parseNum($('metricSpend')?.value);
+    const linkClicks = intForm_('metricLinkClicks');
+    const googleClicks = intForm_('metricClicks');
+    const conversations = intForm_('metricConversationsStarted');
+    const conversions = intForm_('metricConversions');
+    const rawLeads = intForm_('metricRawLeads');
+    const videoPlays = intForm_('metricVideoPlays');
+
+    return {
+      campaign_id: $('metricCampaign')?.value || '',
+      date: $('metricDate')?.value || '',
+      platform_type: platformType,
+      spend,
+      total_charge: parseNum($('metricTotalCharge')?.value),
+      tax_amount: parseNum($('metricTaxAmount')?.value),
+      daily_budget: parseNum($('metricDailyBudget')?.value),
+      duration_days: intForm_('metricDurationDays'),
+      conversations_started: conversations,
+      cost_per_conversation: parseNum($('metricCostPerConversation')?.value),
+      impressions: intForm_('metricImpressions') || videoPlays,
+      clicks: platformType === 'meta' ? linkClicks : googleClicks,
+      leads: platformType === 'meta' ? conversations : (conversions || rawLeads),
+      sales: intForm_('metricSales'),
+      revenue: parseNum($('metricRevenue')?.value),
+      video_plays: videoPlays,
+      viewers: intForm_('metricViewers'),
+      link_clicks: linkClicks || googleClicks,
+      post_interactions: intForm_('metricPostInteractions'),
+      saves: 0,
+      shares: 0,
+      comments: 0,
+      reactions: intForm_('metricReactions'),
+      optimization_score: parseNum($('metricOptimizationScore')?.value),
+      ctr: parseNum($('metricCtr')?.value),
+      avg_cpc: parseNum($('metricAvgCpc')?.value),
+      conversions,
+      interactions: intForm_('metricInteractions'),
+      raw_leads: rawLeads,
+      qualified_leads: intForm_('metricQualifiedLeads'),
+      converted_leads: intForm_('metricConvertedLeads'),
+      top_searches: strForm_('metricTopSearches'),
+      costly_keywords: strForm_('metricCostlyKeywords'),
+      best_keywords: strForm_('metricBestKeywords'),
+      quick_observation: strForm_('metricQuickObservation'),
+      notes: strForm_('metricQuickObservation'),
+    };
+  }
+
+  function updateMetricPlatformUI_() {
+    const campaign = getSelectedCampaign_();
+    const platformType = getCampaignPlatformType_(campaign);
+    const platformHelp = $('platformHelp');
+    if (platformHelp) {
+      platformHelp.textContent = platformType === 'meta'
+        ? 'Usa los nombres que aparecen en Meta: conversaciones con mensajes iniciadas, clics en el enlace, interacciones, reproducciones, espectadores, importe gastado.'
+        : platformType === 'google'
+          ? 'Usa los nombres que aparecen en Google Ads: clics, impresiones, CPC prom., costo, CTR, conversiones, nivel de optimizacion y busquedas.'
+          : 'Usa los campos generales para registrar gasto, clics, contactos, ventas e ingreso estimado.';
+    }
+
+    document.querySelectorAll('[data-platforms]').forEach(el => {
+      const platforms = String(el.getAttribute('data-platforms') || '').split(/\s+/).filter(Boolean);
+      const visible = platforms.includes('all') || platforms.includes(platformType);
+      el.classList.toggle('hidden-platform-field', !visible);
+      el.querySelectorAll('input, textarea, select').forEach(input => {
+        input.disabled = !visible;
+      });
+    });
+  }
+
+  function getSelectedCampaign_() {
+    const id = $('metricCampaign')?.value || '';
+    return App.campaigns.find(c => String(c.campaign_id || '') === String(id)) || null;
+  }
+
+  function getCampaignPlatformType_(campaign) {
+    const text = `${campaign?.canal || ''} ${campaign?.plataforma || ''}`.toLowerCase();
+    if (text.includes('meta') || text.includes('facebook') || text.includes('instagram')) return 'meta';
+    if (text.includes('google')) return 'google';
+    return 'general';
+  }
+
+  function validateMetricPayload_(payload) {
+    const numericKeys = [
+      'spend','total_charge','tax_amount','daily_budget','duration_days','conversations_started','cost_per_conversation',
+      'impressions','clicks','leads','sales','revenue','video_plays','viewers','link_clicks','post_interactions','reactions',
+      'optimization_score','ctr','avg_cpc','conversions','interactions','raw_leads','qualified_leads','converted_leads'
+    ];
+    for (const key of numericKeys) {
+      if (Number(payload[key] || 0) < 0) return 'Los campos numericos no pueden ser negativos.';
+    }
+    if (payload.ctr < 0 || payload.ctr > 100) return 'El CTR debe estar entre 0 y 100.';
+    if (payload.optimization_score < 0 || payload.optimization_score > 100) return 'El nivel de optimizacion debe estar entre 0 y 100.';
+    return '';
+  }
+
+  function clearMetricFormAfterSave_() {
+    const keep = new Set(['metricCampaign', 'metricDate']);
+    $('metricsForm')?.querySelectorAll('input, textarea').forEach(el => {
+      if (!keep.has(el.id)) el.value = '';
+    });
+    updateMetricPlatformUI_();
+  }
+
+  function intForm_(id) {
+    return parseInt($(id)?.value || '0', 10) || 0;
+  }
+
+  function setButtonLoading(button, isLoading, loadingText = 'Guardando...') {
+    if (!button) return;
+    if (isLoading) {
+      button.dataset.originalText = button.dataset.originalText || button.textContent;
+      button.textContent = loadingText;
+      button.disabled = true;
+      button.classList.add('is-loading');
+    } else {
+      button.textContent = button.dataset.originalText || button.textContent;
+      button.disabled = false;
+      button.classList.remove('is-loading');
+    }
   }
 
   async function refreshRecentMetrics_() {

@@ -6,7 +6,7 @@
 
 <title>Seguimiento Marketing · Musicala</title>
 
-<link rel="stylesheet" href="./styles.css?v=20260428-1" />
+<link rel="stylesheet" href="./styles.css?v=20260519-1" />
 
 </head>
 
@@ -94,10 +94,11 @@
         <thead>
           <tr>
             <th>Nombre</th>
-            <th>Canal</th>
+            <th>Canal / plataforma</th>
             <th>Objetivo</th>
+            <th>Fechas</th>
             <th>Estado</th>
-            <th></th>
+            <th>Acciones</th>
           </tr>
         </thead>
 
@@ -129,40 +130,71 @@
           <label>Campaña</label>
           <select id="metricCampaign"></select>
 
-          <label>Fecha</label>
-          <input type="date" id="metricDate" required />
+          <p id="metricHelp" class="form-help">
+            Registra aqui los datos resumidos que ves en la plataforma. No necesitas llenar todo: llena lo que tengas visible y lo que ayude a decidir si la campana esta funcionando.
+          </p>
+          <p id="platformHelp" class="form-help platform-help"></p>
 
-          <label>Gasto reportado por Ads</label>
-          <input type="number" id="metricSpend" />
+          <div class="metric-section">
+            <h4>Datos basicos</h4>
+            <div class="metric-fields">
+              <label data-platforms="all">Fecha del registro<input type="date" id="metricDate" required /></label>
+              <label data-platforms="meta">Gasto reportado por Meta<input type="number" id="metricSpend" min="0" step="1" inputmode="decimal" /></label>
+              <label data-platforms="google">Costo<input type="number" id="metricGoogleCost" min="0" step="1" inputmode="decimal" /></label>
+              <label data-platforms="general">Gasto<input type="number" id="metricGeneralSpend" min="0" step="1" inputmode="decimal" /></label>
+              <label data-platforms="meta">Importe total cobrado<input type="number" id="metricTotalCharge" min="0" step="1" inputmode="decimal" /></label>
+              <label data-platforms="meta">IVA estimado / cobrado<input type="number" id="metricTaxAmount" min="0" step="1" inputmode="decimal" /></label>
+              <label data-platforms="meta google">Presupuesto diario<input type="number" id="metricDailyBudget" min="0" step="1" inputmode="decimal" /></label>
+              <label data-platforms="meta">Duracion en dias<input type="number" id="metricDurationDays" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="google">Nivel de optimizacion (%)<input type="number" id="metricOptimizationScore" min="0" max="100" step="0.01" inputmode="decimal" /></label>
+            </div>
+          </div>
 
-          <label>Mensajes iniciados</label>
-          <input type="number" id="metricLeads" />
+          <div class="metric-section">
+            <h4>Resultados de plataforma</h4>
+            <div class="metric-fields">
+              <label data-platforms="meta">Conversaciones con mensajes iniciadas<input type="number" id="metricConversationsStarted" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="meta">Costo por conversacion con mensajes iniciada<input type="number" id="metricCostPerConversation" min="0" step="1" inputmode="decimal" /></label>
+              <label data-platforms="meta">Clics en el enlace<input type="number" id="metricLinkClicks" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="meta">Interacciones con la publicacion<input type="number" id="metricPostInteractions" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="meta">Reacciones a publicaciones<input type="number" id="metricReactions" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="meta">Reproducciones<input type="number" id="metricVideoPlays" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="meta">Espectadores / alcance<input type="number" id="metricViewers" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="google general">Clics<input type="number" id="metricClicks" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="google general">Impresiones<input type="number" id="metricImpressions" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="google">CTR<input type="number" id="metricCtr" min="0" max="100" step="0.01" inputmode="decimal" /></label>
+              <label data-platforms="google">CPC prom.<input type="number" id="metricAvgCpc" min="0" step="1" inputmode="decimal" /></label>
+              <label data-platforms="google">Conversiones<input type="number" id="metricConversions" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="google">Interacciones<input type="number" id="metricInteractions" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="google general">Leads / contactos<input type="number" id="metricRawLeads" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="google">Cliente potencial calificado<input type="number" id="metricQualifiedLeads" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="google">Cliente potencial que genero una conversion<input type="number" id="metricConvertedLeads" min="0" step="1" inputmode="numeric" /></label>
+            </div>
+          </div>
 
-          <label>Clics en el enlace</label>
-          <input type="number" id="metricClicks" />
+          <div class="metric-section" data-platforms="google">
+            <h4>Informacion util para analisis</h4>
+            <div class="metric-fields one-col">
+              <label data-platforms="google">Principales busquedas<textarea id="metricTopSearches" rows="2"></textarea></label>
+              <label data-platforms="google">Palabras clave que mas gastaron<textarea id="metricCostlyKeywords" rows="2"></textarea></label>
+              <label data-platforms="google">Palabras clave que mejor funcionaron<textarea id="metricBestKeywords" rows="2"></textarea></label>
+            </div>
+          </div>
 
-          <label>Reproducciones</label>
-          <input type="number" id="metricVideoPlays" />
+          <div class="metric-section">
+            <h4>Resultado comercial Musicala</h4>
+            <div class="metric-fields">
+              <label data-platforms="all">Ventas / matriculas confirmadas<input type="number" id="metricSales" min="0" step="1" inputmode="numeric" /></label>
+              <label data-platforms="all">Ingreso estimado por ventas<input type="number" id="metricRevenue" min="0" step="1" inputmode="decimal" /></label>
+            </div>
+          </div>
 
-          <label>Espectadores / alcance</label>
-          <input type="number" id="metricViewers" />
+          <div class="metric-section">
+            <h4>Observaciones</h4>
+            <label data-platforms="all">Observaciones rapidas<textarea id="metricQuickObservation" rows="3"></textarea></label>
+          </div>
 
-          <label>Interacciones con la publicacion</label>
-          <input type="number" id="metricPostInteractions" />
-
-          <label>Guardados</label>
-          <input type="number" id="metricSaves" />
-
-          <label>Compartidos</label>
-          <input type="number" id="metricShares" />
-
-          <label>Comentarios</label>
-          <input type="number" id="metricComments" />
-
-          <label>Ventas / matrículas confirmadas</label>
-          <input type="number" id="metricSales" />
-
-          <button type="submit" class="primary">
+          <button id="metricSaveBtn" type="submit" class="primary">
             Guardar
           </button>
 
@@ -286,7 +318,7 @@
 
     <div class="modal-actions">
       <button type="button" data-action="close-campaign-modal">Cancelar</button>
-      <button type="submit" class="primary">Guardar campaña</button>
+      <button id="campaignSaveBtn" type="submit" class="primary">Guardar campaña</button>
     </div>
   </form>
 </div>
@@ -297,9 +329,9 @@
 <script src="./utils.js?v=20260424-2"></script>
 <script src="./state.js?v=20260424-2"></script>
 <script src="./api.js?v=20260424-2"></script>
-<script src="./ui.js?v=20260428-1"></script>
+<script src="./ui.js?v=20260519-1"></script>
 <script src="./charts.js?v=20260424-2"></script>
-<script src="./app.js?v=20260428-1"></script>
+<script src="./app.js?v=20260519-1"></script>
 
 </body>
 </html>

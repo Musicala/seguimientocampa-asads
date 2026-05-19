@@ -100,7 +100,7 @@ const UI = (() => {
     const list = (campaigns || []).slice();
 
     if (!list.length) {
-      tb.innerHTML = `<tr><td colspan="5" class="muted">Aun no hay campanas.</td></tr>`;
+      tb.innerHTML = `<tr><td colspan="6" class="muted">Aun no hay campanas.</td></tr>`;
       return;
     }
 
@@ -114,22 +114,21 @@ const UI = (() => {
           ${num_(c.presupuesto_diario) > 0 ? `<div class="muted" style="font-size:12px">Presupuesto diario: ${moneyCOP_(c.presupuesto_diario)}</div>` : ""}
           ${num_(c.cobro_total) > 0 ? `<div class="muted" style="font-size:12px">Cobro real: ${moneyCOP_(c.cobro_total)}</div>` : ""}
         </td>
-        <td>${esc_(c.canal || "")}</td>
+        <td>
+          ${platformChip_(platformType_(c))}
+          <div class="muted" style="font-size:12px; margin-top:4px">${esc_(c.canal || c.plataforma || "")}</div>
+        </td>
         <td>${esc_(c.objetivo || "")}</td>
+        <td>${campaignDates_(c)}</td>
         <td>${badge_(c.estado || "")}</td>
         <td style="text-align:right">
-          <button class="btn-mini" data-action="edit-campaign" data-id="${escAttr_(c.campaign_id || "")}">
-            Editar
-          </button>
-          <button class="btn-mini" data-action="copy-id" data-id="${escAttr_(c.campaign_id || "")}">
-            Copiar ID
-          </button>
+          <button class="btn-mini" data-action="edit-campaign" data-id="${escAttr_(c.campaign_id || "")}">Editar</button>
+          <button class="btn-mini" data-action="copy-id" data-id="${escAttr_(c.campaign_id || "")}">Copiar ID</button>
         </td>
       `;
       tb.appendChild(tr);
     });
 
-    // delegacion de eventos
     tb.querySelectorAll('button[data-action="copy-id"]').forEach(btn => {
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-id") || "";
@@ -173,32 +172,36 @@ const UI = (() => {
     }
 
     el.innerHTML = `
-      <table class="data-table">
+      ${quickReadBlock_(list)}
+      <table class="data-table metrics-history-table">
         <thead>
           <tr>
             <th>Fecha</th>
-            <th>ID</th>
-            <th>Gasto</th>
-            <th>Reprod.</th>
-            <th>Clics enlace</th>
-            <th>Mensajes</th>
-            <th>CPMje</th>
-            <th>Decision</th>
+            <th>Campana</th>
+            <th>Plataforma</th>
+            <th>Gasto / costo</th>
+            <th>Resultado principal</th>
+            <th>Clics</th>
+            <th>Ventas</th>
+            <th>Costo por resultado</th>
+            <th>Observacion</th>
           </tr>
         </thead>
         <tbody>
           ${list.map(r => {
+            const result = primaryResult_(r);
             const spend = num_(r.spend);
             return `
               <tr>
                 <td>${esc_(dateFmt_(r.date))}</td>
-                <td class="muted" style="font-size:12px">${esc_(r.campaign_id || "")}</td>
+                <td>${esc_(r.nombre || r.campaign_name || r.campaign_id || "")}</td>
+                <td>${platformChip_(platformType_(r))}</td>
                 <td>${moneyCOP_(spend)}</td>
-                <td>${intFmt_(r.video_plays || r.impressions)}</td>
+                <td><strong>${intFmt_(result.value)}</strong><div class="muted" style="font-size:11px">${esc_(result.label)}</div></td>
                 <td>${intFmt_(r.link_clicks || r.clicks)}</td>
-                <td>${intFmt_(r.leads)}</td>
-                <td>${moneyCOP_(safeDiv_(spend, r.leads))}</td>
-                <td>${esc_(decisionLabel_(r))}</td>
+                <td>${intFmt_(r.sales)}</td>
+                <td>${result.value > 0 ? moneyCOP_(spend / result.value) : "Sin resultado"}</td>
+                <td>${esc_(r.quick_observation || r.notes || "")}</td>
               </tr>
             `;
           }).join("")}
@@ -244,6 +247,80 @@ const UI = (() => {
 
     root.appendChild(item);
     setTimeout(() => item.remove(), 3200);
+  }
+
+
+  function platformType_(row) {
+    const explicit = String(row?.platform_type || "").toLowerCase();
+    if (explicit.includes("meta")) return "meta";
+    if (explicit.includes("google")) return "google";
+    const text = `${row?.canal || ""} ${row?.plataforma || ""}`.toLowerCase();
+    if (text.includes("meta") || text.includes("facebook") || text.includes("instagram")) return "meta";
+    if (text.includes("google")) return "google";
+    return "general";
+  }
+
+  function platformLabel_(type) {
+    if (type === "meta") return "Meta";
+    if (type === "google") return "Google Ads";
+    return "General";
+  }
+
+  function platformChip_(type) {
+    return `<span class="chip chip-${escAttr_(type)}">${esc_(platformLabel_(type))}</span>`;
+  }
+
+  function campaignDates_(c) {
+    const created = c.fecha_creacion || c.fecha_inicio || "";
+    const start = c.fecha_inicio || "";
+    const end = c.fecha_fin || "";
+    const finished = String(c.estado || "").toLowerCase().includes("fin");
+    return `
+      <div class="date-stack">
+        <span>Creada: ${esc_(dateDMY_(created) || "Sin fecha")}</span>
+        <span>Inicio: ${esc_(dateDMY_(start) || "Sin fecha")}</span>
+        ${end ? `<span class="chip chip-end">${finished ? "Finalizo" : "Finaliza"}: ${esc_(dateDMY_(end))}</span>` : `<span class="chip chip-continuous">Continua</span>`}
+      </div>
+    `;
+  }
+
+  function primaryResult_(row) {
+    const type = platformType_(row);
+    if (type === "meta") return { label: "Conversaciones", value: num_(row.conversations_started || row.leads) };
+    if (type === "google") return { label: "Conversiones / clientes potenciales", value: num_(row.conversions || row.raw_leads || row.leads) };
+    return { label: "Leads / contactos", value: num_(row.raw_leads || row.leads) };
+  }
+
+  function quickReadBlock_(rows) {
+    const items = rows.slice(0, 5).map(r => quickRead_(r));
+    return `
+      <div class="quick-read">
+        <h4>Lectura rapida</h4>
+        <div class="quick-read-list">
+          ${items.map(item => `<div class="quick-read-item ${escAttr_(item.tone)}"><strong>${esc_(item.name)}</strong><span>${esc_(item.text)}</span></div>`).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function quickRead_(row) {
+    const spend = num_(row.spend);
+    const result = primaryResult_(row).value;
+    const clicks = num_(row.link_clicks || row.clicks);
+    const sales = num_(row.sales);
+    const name = row.nombre || row.campaign_name || row.campaign_id || "Campana";
+    if (sales > 0) return { name, tone: "good", text: "Tiene ventas registradas. Revisar costo por venta." };
+    if (spend > 0 && result === 0) return { name, tone: "bad", text: "Mucho gasto y cero resultados. Revisar segmentacion, anuncio u objetivo." };
+    if (clicks > 0 && result === 0) return { name, tone: "watch", text: "Tiene clics, pero pocos contactos. Revisar anuncio o pagina destino." };
+    if (result > 0 && sales === 0) return { name, tone: "watch", text: "Esta generando mensajes o contactos, pero aun no registra ventas." };
+    if (clicks > 0 && spend > 0) return { name, tone: "neutral", text: "Buen volumen de clics con bajo costo, pero falta medir ventas." };
+    return { name, tone: "neutral", text: "Faltan datos para decidir con tranquilidad." };
+  }
+
+  function dateDMY_(x) {
+    const iso = dateFmt_(x);
+    const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
   }
 
   // ---------------- Private helpers ----------------
