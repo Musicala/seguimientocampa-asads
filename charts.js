@@ -18,6 +18,7 @@ const Charts = (() => {
     const best = chooseBest_(rows, daily);
     const trend = daily.length > 1 ? renderTrend_(daily) : renderSingleDayBars_(best);
     const decision = decisionFor_(best);
+    const budgetRhythm = renderBudgetRhythm_(rows);
 
     el.innerHTML = `
       <div class="performance-decision ${decision.tone}">
@@ -33,6 +34,8 @@ const Charts = (() => {
         ${stat_("Mensajes", int_(best.leads), "Conversaciones iniciadas")}
         ${stat_("Costo por mensaje", money_(safeDiv_(best.spend, best.leads)), "Entre mas bajo, mejor")}
       </div>
+
+      ${budgetRhythm}
 
       <div class="repeat-card">
         <span class="eyebrow">Base para repetir</span>
@@ -95,6 +98,26 @@ const Charts = (() => {
         <span class="eyebrow">Tendencia</span>
         <strong>${improved ? "Va mejorando" : "Revisar evolucion"}</strong>
         <p>Ultimo dia: ${int_(last.leads)} mensajes a ${money_(lastCpm)} cada uno.</p>
+      </div>
+    `;
+  }
+
+  function renderBudgetRhythm_(rows) {
+    const withBudget = (rows || []).filter(r => r && r.budget && r.budget.monthly_budget_target);
+    if (!withBudget.length) return "";
+
+    const danger = withBudget.filter(r => r.budget.status === "danger").length;
+    const warning = withBudget.filter(r => r.budget.status === "warning").length;
+    const projected = withBudget.reduce((acc, r) => acc + num_(r.budget.projected_spend), 0);
+    const target = withBudget.reduce((acc, r) => acc + num_(r.budget.monthly_budget_target), 0);
+    const tone = danger ? "bad" : warning ? "watch" : "good";
+    const title = danger ? "Ritmo de gasto alto" : warning ? "Ritmo para vigilar" : "Ritmo de gasto controlado";
+
+    return `
+      <div class="trend-box ${tone}">
+        <span class="eyebrow">Ritmo de presupuesto</span>
+        <strong>${esc_(title)}</strong>
+        <p>Proyeccion: ${money_(projected)} frente a ${money_(target)} planeados.</p>
       </div>
     `;
   }

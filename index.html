@@ -6,7 +6,7 @@
 
 <title>Seguimiento Marketing · Musicala</title>
 
-<link rel="stylesheet" href="./styles.css?v=20260519-1" />
+<link rel="stylesheet" href="./styles.css?v=20260527-4" />
 
 </head>
 
@@ -54,6 +54,25 @@
 
   <!-- DASHBOARD -->
   <section id="view-dashboard" class="view active">
+    <div class="dashboard-toolbar card">
+      <div>
+        <h2>Dashboard</h2>
+        <p id="dashboardRangeLabel">Mes en curso</p>
+      </div>
+      <div class="period-controls">
+        <button type="button" class="btn-mini period-preset active" data-period="this_month">Este mes</button>
+        <button type="button" class="btn-mini period-preset" data-period="last_month">Mes anterior</button>
+        <button type="button" class="btn-mini period-preset" data-period="all">Todo</button>
+        <label>Desde<input type="date" id="filterFrom" /></label>
+        <label>Hasta<input type="date" id="filterTo" /></label>
+        <button type="button" id="btnApplyPeriod" class="primary">Aplicar</button>
+      </div>
+    </div>
+
+    <div id="dashboardLoading" class="dashboard-loading hidden" aria-live="polite">
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Aplicando filtros…</span>
+    </div>
 
     <div class="dashboard-grid">
 
@@ -65,6 +84,11 @@
       <div class="card">
         <h3>Gasto vs Resultados</h3>
         <div id="performanceSummary"></div>
+      </div>
+
+      <div class="card budget-control-card">
+        <h3>Control de presupuesto</h3>
+        <div id="budgetControl"></div>
       </div>
 
       <div class="card">
@@ -97,6 +121,7 @@
             <th>Canal / plataforma</th>
             <th>Objetivo</th>
             <th>Fechas</th>
+            <th>Presupuesto</th>
             <th>Estado</th>
             <th>Acciones</th>
           </tr>
@@ -139,6 +164,13 @@
             <h4>Datos basicos</h4>
             <div class="metric-fields">
               <label data-platforms="all">Fecha del registro<input type="date" id="metricDate" required /></label>
+              <label data-platforms="all">Tipo de registro de gasto
+                <select id="metricSpendEntryType">
+                  <option value="daily_amount">Gasto del dia</option>
+                  <option value="period_snapshot">Gasto acumulado</option>
+                  <option value="final_total">Total final</option>
+                </select>
+              </label>
               <label data-platforms="meta">Gasto reportado por Meta<input type="number" id="metricSpend" min="0" step="1" inputmode="decimal" /></label>
               <label data-platforms="google">Costo<input type="number" id="metricGoogleCost" min="0" step="1" inputmode="decimal" /></label>
               <label data-platforms="general">Gasto<input type="number" id="metricGeneralSpend" min="0" step="1" inputmode="decimal" /></label>
@@ -271,6 +303,12 @@
       </label>
 
       <label>
+        Fecha de facturación
+        <input id="campaignBillingDate" type="date" />
+        <small class="field-hint">Cuándo nos cobraron. En pago único anticipado, el gasto cuenta en el mes de esta fecha (no en cuándo corre la campaña).</small>
+      </label>
+
+      <label>
         Estado
         <select id="campaignStatus">
           <option value="Activa">Activa</option>
@@ -311,6 +349,37 @@
       </label>
     </div>
 
+    <div class="form-section budget-form-section">
+      <h3>Presupuesto máximo Musicala</h3>
+      <p>Este es el techo que Musicala acepta gastar. En campañas activas se mide por mes; en campañas finalizadas se compara contra el gasto real de esa campaña.</p>
+      <div class="form-grid">
+      <label>
+        Tipo de presupuesto
+        <select id="campaignBudgetMode">
+          <option value="daily_google">Google Ads diario</option>
+          <option value="daily_meta">Meta diario</option>
+          <option value="one_time">Pago unico</option>
+          <option value="monthly_cap">Tope mensual</option>
+        </select>
+      </label>
+      <label>
+        Presupuesto máximo mensual / campaña
+        <input id="campaignMonthlyBudgetTarget" type="number" min="0" step="1" inputmode="decimal" placeholder="Ej: 600000" />
+        <small class="field-hint">Para campañas continuas es mensual. Para campañas finalizadas es el máximo aprobado para esa campaña.</small>
+      </label>
+
+      <label>
+        CPL objetivo
+        <input id="campaignCplTarget" type="number" min="0" step="1" inputmode="decimal" placeholder="Costo maximo por lead" />
+      </label>
+
+      <label>
+        Notas de presupuesto
+        <textarea id="campaignBudgetNotes" rows="2"></textarea>
+      </label>
+      </div>
+    </div>
+
     <label>
       Notas
       <textarea id="campaignNotes" rows="3"></textarea>
@@ -323,15 +392,67 @@
   </form>
 </div>
 
+<div id="budgetModal" class="modal hidden" aria-hidden="true">
+  <div class="modal-backdrop" data-action="close-budget-modal"></div>
+  <form id="budgetForm" class="modal-panel budget-modal-panel">
+    <div class="modal-header">
+      <div>
+        <h2 data-budget-title>Presupuesto máximo Musicala</h2>
+        <p data-budget-desc>Define un único techo global aprobado por Musicala. Se aplica a la suma del mes en curso.</p>
+      </div>
+      <button type="button" class="icon-button" data-action="close-budget-modal" aria-label="Cerrar">×</button>
+    </div>
+
+    <input type="hidden" id="budgetCampaignId" />
+
+    <label data-budget-scope="campaign" style="display:none">
+      Campaña
+      <select id="budgetCampaignSelect"></select>
+    </label>
+
+    <div class="form-grid">
+      <label data-budget-scope="campaign" style="display:none">
+        Tipo de presupuesto
+        <select id="budgetModeQuick">
+          <option value="daily_google">Google Ads diario</option>
+          <option value="daily_meta">Meta diario</option>
+          <option value="one_time">Pago unico</option>
+          <option value="monthly_cap">Tope mensual</option>
+        </select>
+      </label>
+
+      <label>
+        Presupuesto máximo
+        <input id="budgetMaxQuick" type="number" min="0" step="1" inputmode="decimal" required placeholder="Ej: 1000000" />
+      </label>
+
+      <label data-budget-scope="campaign" style="display:none">
+        CPL objetivo
+        <input id="budgetCplQuick" type="number" min="0" step="1" inputmode="decimal" placeholder="Opcional" />
+      </label>
+
+      <label data-budget-scope="campaign" style="display:none">
+        Notas
+        <textarea id="budgetNotesQuick" rows="2"></textarea>
+      </label>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" data-action="close-budget-modal">Cancelar</button>
+      <button id="budgetSaveBtn" type="submit" class="primary">Guardar presupuesto</button>
+    </div>
+  </form>
+</div>
+
 
 <!-- ================= SCRIPTS ================= -->
 
 <script src="./utils.js?v=20260424-2"></script>
 <script src="./state.js?v=20260424-2"></script>
-<script src="./api.js?v=20260424-2"></script>
-<script src="./ui.js?v=20260519-1"></script>
-<script src="./charts.js?v=20260424-2"></script>
-<script src="./app.js?v=20260519-1"></script>
+<script src="./api.js?v=20260527-7"></script>
+<script src="./ui.js?v=20260527-7"></script>
+<script src="./charts.js?v=20260527-7"></script>
+<script src="./app.js?v=20260527-7"></script>
 
 </body>
 </html>

@@ -20,6 +20,7 @@ const UI = (() => {
 
     el.innerHTML = `
       ${kpiLine_("Gasto real", moneyCOP_(totals.spend))}
+      ${totals.budget_monthly_target ? kpiLine_("Presupuesto max.", moneyCOP_(totals.budget_monthly_target)) : ""}
       ${totals.reported_spend ? kpiLine_("Gasto Ads", moneyCOP_(totals.reported_spend)) : ""}
       ${kpiLine_("Leads", intFmt_(totals.leads))}
       ${kpiLine_("Ventas", intFmt_(totals.sales))}
@@ -40,6 +41,8 @@ const UI = (() => {
       <div class="kpi-card">
         ${decisionBlock_(totals)}
         ${kpiLine_("Gasto real", moneyCOP_(totals.spend))}
+        ${totals.budget_monthly_target ? kpiLine_("Presupuesto maximo usado", `${pctFmt_(totals.budget_used_pct)} de ${moneyCOP_(totals.budget_monthly_target)}`) : ""}
+        ${totals.budget_projected_spend ? kpiLine_("Proyeccion / cierre", moneyCOP_(totals.budget_projected_spend)) : ""}
         ${totals.reported_spend ? kpiLine_("Gasto Ads reportado", moneyCOP_(totals.reported_spend)) : ""}
         ${kpiLine_("Mensajes iniciados", intFmt_(totals.leads))}
         ${kpiLine_("Costo por mensaje", moneyCOP_(totals.cpl))}
@@ -100,7 +103,7 @@ const UI = (() => {
     const list = (campaigns || []).slice();
 
     if (!list.length) {
-      tb.innerHTML = `<tr><td colspan="6" class="muted">Aun no hay campanas.</td></tr>`;
+      tb.innerHTML = `<tr><td colspan="7" class="muted">Aun no hay campanas.</td></tr>`;
       return;
     }
 
@@ -120,8 +123,10 @@ const UI = (() => {
         </td>
         <td>${esc_(c.objetivo || "")}</td>
         <td>${campaignDates_(c)}</td>
+        <td>${campaignBudgetSummary_(c)}</td>
         <td>${badge_(c.estado || "")}</td>
         <td style="text-align:right">
+          <button class="btn-mini" data-action="edit-budget" data-id="${escAttr_(c.campaign_id || "")}">Presupuesto</button>
           <button class="btn-mini" data-action="edit-campaign" data-id="${escAttr_(c.campaign_id || "")}">Editar</button>
           <button class="btn-mini" data-action="copy-id" data-id="${escAttr_(c.campaign_id || "")}">Copiar ID</button>
         </td>
@@ -141,6 +146,69 @@ const UI = (() => {
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-id") || "";
         document.dispatchEvent(new CustomEvent("campaign:edit", { detail: { campaign_id: id } }));
+      });
+    });
+
+    tb.querySelectorAll('button[data-action="edit-budget"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-id") || "";
+        document.dispatchEvent(new CustomEvent("budget:edit", { detail: { campaign_id: id } }));
+      });
+    });
+  }
+
+  function renderBudgetControl(rows, totals) {
+    const el = $("budgetControl");
+    if (!el) return;
+
+    const list = (rows || []).slice().sort((a, b) => budgetPriority_(a) - budgetPriority_(b));
+    if (!list.length) {
+      el.innerHTML = `
+        <div class="budget-empty-action">
+          <span>No hay campanas en este periodo.</span>
+          <button type="button" class="primary budget-add-btn" data-action="open-budget-modal">Agregar presupuesto maximo</button>
+        </div>
+      `;
+      el.querySelector('[data-action="open-budget-modal"]')?.addEventListener("click", () => {
+        document.dispatchEvent(new CustomEvent("budget:edit", { detail: { campaign_id: "" } }));
+      });
+      return;
+    }
+
+    const summary = totals?.budget_monthly_target ? `
+      <div class="budget-summary-row">
+        <div class="budget-summary">
+          ${budgetStat_("Presupuesto maximo", moneyCOP_(totals.budget_monthly_target))}
+          ${budgetStat_("Gasto registrado", moneyCOP_(totals.budget_spend_to_date))}
+          ${budgetStat_("Comprometido / estimado", moneyCOP_(totals.budget_committed))}
+          ${budgetStat_("Restante", moneyCOP_(totals.budget_remaining))}
+          ${budgetStat_("Proyeccion / cierre", moneyCOP_(totals.budget_projected_spend))}
+        </div>
+        <button type="button" class="primary budget-add-btn" data-action="open-budget-modal">Agregar presupuesto maximo</button>
+      </div>
+    ` : `
+      <div class="budget-empty-action">
+        <span>Define el presupuesto maximo aprobado para empezar el control.</span>
+        <button type="button" class="primary budget-add-btn" data-action="open-budget-modal">Agregar presupuesto maximo</button>
+      </div>
+    `;
+
+    el.innerHTML = `
+      ${summary}
+      <div class="budget-card-list">
+        ${list.map(r => budgetCard_(r)).join("")}
+      </div>
+    `;
+
+    el.querySelectorAll('[data-action="open-budget-modal"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.dispatchEvent(new CustomEvent("budget:edit", { detail: { campaign_id: "" } }));
+      });
+    });
+
+    el.querySelectorAll('[data-action="edit-budget"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.dispatchEvent(new CustomEvent("budget:edit", { detail: { campaign_id: btn.getAttribute("data-id") || "" } }));
       });
     });
   }
@@ -315,6 +383,79 @@ const UI = (() => {
     if (result > 0 && sales === 0) return { name, tone: "watch", text: "Esta generando mensajes o contactos, pero aun no registra ventas." };
     if (clicks > 0 && spend > 0) return { name, tone: "neutral", text: "Buen volumen de clics con bajo costo, pero falta medir ventas." };
     return { name, tone: "neutral", text: "Faltan datos para decidir con tranquilidad." };
+  }
+
+  function campaignBudgetSummary_(c) {
+    const b = c.budget || {};
+    const target = num_(b.monthly_budget_target || c.monthly_budget_target || c.presupuesto_mensual);
+    const estimate = num_(b.monthly_budget_estimated || c.monthly_budget_estimated);
+    const status = b.status || c.budget_status || "missing";
+    const scope = b.scope === "campaign_closed" ? "Campana cerrada" : "Mes en curso";
+    return `
+      <div class="date-stack">
+        <span>Maximo: ${target ? moneyCOP_(target) : "Sin dato"}</span>
+        ${estimate ? `<span>Techo estimado: ${moneyCOP_(estimate)}</span>` : ""}
+        <span class="muted">${esc_(scope)}</span>
+        <span class="budget-pill ${escAttr_(status)}">${esc_(budgetStatusLabel_(status))}</span>
+      </div>
+    `;
+  }
+
+  function budgetCard_(row) {
+    const b = row.budget || {};
+    const status = b.status || "missing";
+    const usedPct = Math.min(1.25, Math.max(0, num_(b.used_pct)));
+    const isClosed = Boolean(b.is_finished || b.scope === "campaign_closed");
+    return `
+      <article class="budget-campaign-card ${escAttr_(status)}">
+        <div class="budget-card-head">
+          <div>
+            <strong>${esc_(row.nombre || row.campaign_id || "Campana")}</strong>
+            <span>${esc_(budgetModeLabel_(b.mode || row.budget_mode))} · ${esc_(isClosed ? "campana cerrada" : "control mensual")}</span>
+            ${row.fecha_creacion ? `<span class="budget-created">Creada: ${esc_(dateDMY_(row.fecha_creacion))}</span>` : ""}
+          </div>
+          <span class="budget-pill ${escAttr_(status)}">${esc_(budgetStatusLabel_(status))}</span>
+        </div>
+        <div class="budget-progress" aria-label="Presupuesto usado">
+          <span style="width:${Math.round(Math.min(100, usedPct * 100))}%"></span>
+        </div>
+        <div class="budget-metrics">
+          ${budgetStat_(isClosed ? "Usado final" : "Usado del mes", pctFmt_(b.used_pct))}
+          ${budgetStat_("Gasto", moneyCOP_(b.spend_to_date))}
+          ${budgetStat_("Restante", moneyCOP_(b.remaining))}
+          ${budgetStat_(isClosed ? "Gasto final" : "Proyeccion / estimado", moneyCOP_(isClosed ? b.projected_spend : (b.committed_spend != null ? b.committed_spend : b.projected_spend)))}
+          ${isClosed ? budgetStat_("Estado", "Finalizada") : budgetStat_("Diario seguro", moneyCOP_(b.safe_daily_spend))}
+          ${budgetStat_(isClosed ? "Periodo cerrado" : "Avance del mes", pctFmt_(b.expected_progress))}
+        </div>
+        <div class="budget-card-footer">
+          <p>${esc_(b.recommendation || "Completar datos para recomendar.")}</p>
+          <button type="button" class="btn-mini" data-action="edit-budget" data-id="${escAttr_(row.campaign_id || "")}">Definir maximo</button>
+        </div>
+      </article>
+    `;
+  }
+
+  function budgetStat_(label, value) {
+    return `<div class="budget-stat"><span>${esc_(label)}</span><strong>${esc_(value)}</strong></div>`;
+  }
+
+  function budgetPriority_(row) {
+    const status = row?.budget?.status || "missing";
+    return { danger: 0, warning: 1, missing: 2, ok: 3 }[status] ?? 4;
+  }
+
+  function budgetStatusLabel_(status) {
+    if (status === "ok") return "OK";
+    if (status === "warning") return "Alerta";
+    if (status === "danger") return "Riesgo";
+    return "Faltan datos";
+  }
+
+  function budgetModeLabel_(mode) {
+    if (mode === "daily_google") return "Google Ads diario";
+    if (mode === "daily_meta") return "Meta diario";
+    if (mode === "one_time") return "Pago unico";
+    return "Tope mensual";
   }
 
   function dateDMY_(x) {
@@ -571,6 +712,7 @@ const UI = (() => {
     renderGlobalKPIs,
     renderDashboardKPIs,
     renderRankingTable,
+    renderBudgetControl,
     renderCampaignTable,
     fillCampaignSelect,
     renderMetricsTable,

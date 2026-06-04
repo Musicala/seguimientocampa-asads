@@ -4,7 +4,7 @@
 ========================================================= */
 
 const WEBAPP_URL =
-  "https://script.google.com/macros/s/AKfycbxS7FZ9vC9cwTVxVVW81fQ5fy_omFpADWGn6bg_1GWIHVmxn98BeqZZ7-oV1YD4sHFs/exec";
+  "https://script.google.com/macros/s/AKfycbwWz42jzkXEi9bc9lFzByAOVjVo_4daSDKW5Ac6Y4cHRscp2zwbWwiF9co0KPH_Ezth/exec";
 
 const API = {
   async call(action, params = {}) {
@@ -33,6 +33,12 @@ const API = {
   },
   ping() {
     return API.call("ping");
+  },
+  setGlobalBudget(amount) {
+    return API.call("setGlobalBudget", { amount });
+  },
+  getGlobalBudget() {
+    return API.call("getGlobalBudget");
   },
 };
 

@@ -43,12 +43,16 @@
     wireTabs_();
     wireCampaigns_();
     wireMetrics_();
+    wireDashboardFilters_();
+    wireBudgetQuickEdit_();
 
     // Defaults: rango mes actual
     const now = new Date();
     const from = new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     App.filters.from = toISODate(from);
-    App.filters.to = toISODate(now);
+    App.filters.to = toISODate(to);
+    syncPeriodInputs_();
 
     const connected = await boot_();
 
@@ -100,6 +104,7 @@
     } else {
       fillSelectFallback_($('metricCampaign'), App.campaigns);
     }
+    fillBudgetCampaignSelect_();
     updateMetricPlatformUI_();
 
     // Default fecha del formulario
@@ -114,16 +119,45 @@
   }
 
   // ---------- DASHBOARD ----------
+  function setDashboardLoading_(isLoading) {
+    const overlay = $('dashboardLoading');
+    if (overlay) overlay.classList.toggle('hidden', !isLoading);
+    document.querySelector('.dashboard-grid')?.classList.toggle('is-loading', isLoading);
+    document.querySelectorAll('[data-period], #btnApplyPeriod').forEach(btn => {
+      btn.disabled = isLoading;
+    });
+  }
+
   async function refreshDashboard_() {
     const filters = { from: App.filters.from, to: App.filters.to };
 
-    const res = await safeCall_(() => API.dashboard(filters));
+    setDashboardLoading_(true);
+    let res;
+    try {
+      res = await safeCall_(() => API.dashboard(filters));
+    } finally {
+      setDashboardLoading_(false);
+    }
     if (!res?.ok) {
       UIx.toast(res?.error || 'No se pudo cargar dashboard', 'error');
       return;
     }
 
     App.dashboard = res;
+    const budgetById = {};
+    (res.rows || []).forEach(r => { budgetById[String(r.campaign_id || '')] = r; });
+    App.campaigns = App.campaigns.map(c => {
+      const r = budgetById[String(c.campaign_id || '')];
+      if (!r) return c;
+      // Mezcla sin pisar datos buenos de la campana con valores vacios de la fila del dashboard.
+      const merged = { ...c };
+      Object.keys(r).forEach(k => {
+        const v = r[k];
+        if (v !== '' && v !== null && v !== undefined) merged[k] = v;
+      });
+      return merged;
+    });
+    if (window.UI?.renderCampaignTable) UI.renderCampaignTable(App.campaigns);
 
     // Render KPIs globales
     if (window.UI?.renderGlobalKPIs) UI.renderGlobalKPIs(res.totals);
@@ -136,6 +170,19 @@
     // Ranking
     if (window.UI?.renderRankingTable) UI.renderRankingTable(res.rankings, res.rows);
     else renderRankingFallback_(res.rankings, res.rows);
+
+    const campaignById = {};
+    App.campaigns.forEach(c => { campaignById[String(c.campaign_id || '')] = c; });
+    const budgetRows = (res.rows || []).map(r => {
+      const c = campaignById[String(r.campaign_id || '')] || {};
+      return {
+        ...r,
+        fecha_creacion: r.fecha_creacion || c.fecha_creacion || c.fecha_inicio || '',
+        fecha_inicio: r.fecha_inicio || c.fecha_inicio || '',
+      };
+    });
+    if (window.UI?.renderBudgetControl) UI.renderBudgetControl(budgetRows, res.totals);
+    renderDashboardRangeLabel_();
 
     // Resumen visual de rendimiento
     if (window.Charts?.renderPerformance) {
@@ -155,6 +202,8 @@
       const el = $(id);
       if (el) el.addEventListener('input', applyCampaignPlatformDefaults_);
     });
+    const budgetMode = $('campaignBudgetMode');
+    if (budgetMode) budgetMode.addEventListener('change', () => { budgetMode.dataset.userTouched = '1'; });
     document.querySelectorAll('[data-action="close-campaign-modal"]').forEach(el => {
       el.addEventListener('click', closeCampaignModal_);
     });
@@ -191,7 +240,13 @@
       return;
     }
 
-    const res = await safeCall_(() => API.saveCampaign(payload));
+    setButtonLoading(btn, true, 'Guardando...');
+    let res;
+    try {
+      res = await safeCall_(() => API.saveCampaign(payload));
+    } finally {
+      setButtonLoading(btn, false);
+    }
     if (!res?.ok) {
       UIx.toast(res?.error || 'No se pudo guardar campaña', 'error');
       return;
@@ -212,6 +267,7 @@
     if (title) title.textContent = isEdit ? 'Editar campaña' : 'Nueva campaña';
 
     setCampaignFormValue_('campaignId', campaign?.campaign_id || '');
+    if ($('campaignBudgetMode')) $('campaignBudgetMode').dataset.userTouched = isEdit ? '1' : '';
     setCampaignFormValue_('campaignName', campaign?.nombre || '');
     setCampaignFormValue_('campaignChannel', campaign?.canal || '');
     setCampaignFormValue_('campaignPlatform', campaign?.plataforma || '');
@@ -220,13 +276,18 @@
     setCampaignFormValue_('campaignMode', campaign?.modalidad || '');
     setCampaignFormValue_('campaignStart', normalizeDateInput_(campaign?.fecha_inicio) || toISODate(new Date()));
     setCampaignFormValue_('campaignEnd', normalizeDateInput_(campaign?.fecha_fin));
+    setCampaignFormValue_('campaignBillingDate', normalizeDateInput_(campaign?.fecha_facturacion));
     setCampaignFormValue_('campaignStatus', campaign?.estado || 'Activa');
     setCampaignFormValue_('campaignBillingModel', campaign?.modelo_cobro || '');
+    setCampaignFormValue_('campaignBudgetMode', campaign?.budget_mode || inferBudgetMode_(campaign));
     setCampaignFormValue_('campaignDailyBudget', campaign?.presupuesto_diario || '');
     setCampaignFormValue_('campaignAdsSpend', campaign?.gasto_ads_total || campaign?.reported_spend || '');
     setCampaignFormValue_('campaignTax', campaign?.iva_total || '');
     setCampaignFormValue_('campaignTotalCharge', campaign?.cobro_total || '');
     setCampaignFormValue_('campaignMonthlyBudget', campaign?.presupuesto_mensual || '');
+    setCampaignFormValue_('campaignMonthlyBudgetTarget', campaign?.monthly_budget_target || campaign?.presupuesto_mensual || '');
+    setCampaignFormValue_('campaignCplTarget', campaign?.cpl_target || '');
+    setCampaignFormValue_('campaignBudgetNotes', campaign?.budget_notes || '');
     setCampaignFormValue_('campaignNotes', campaign?.notas || '');
 
     modal.classList.remove('hidden');
@@ -258,10 +319,21 @@
       modalidad: strForm_('campaignMode'),
       fecha_inicio: $('campaignStart')?.value || toISODate(new Date()),
       fecha_fin: $('campaignEnd')?.value || '',
+      fecha_facturacion: $('campaignBillingDate')?.value || '',
       tipo_duracion: $('campaignEnd')?.value ? 'Con fecha de finalizaci?n' : 'Continua',
       estado: strForm_('campaignStatus') || 'Activa',
       presupuesto_diario: parseNum($('campaignDailyBudget')?.value),
       presupuesto_mensual: parseNum($('campaignMonthlyBudget')?.value),
+      budget_mode: strForm_('campaignBudgetMode') || inferBudgetMode_({
+        canal: strForm_('campaignChannel'),
+        plataforma: strForm_('campaignPlatform'),
+        presupuesto_diario: parseNum($('campaignDailyBudget')?.value),
+        cobro_total: parseNum($('campaignTotalCharge')?.value),
+        gasto_ads_total: parseNum($('campaignAdsSpend')?.value),
+      }),
+      monthly_budget_target: parseNum($('campaignMonthlyBudgetTarget')?.value) || parseNum($('campaignMonthlyBudget')?.value),
+      cpl_target: parseNum($('campaignCplTarget')?.value),
+      budget_notes: strForm_('campaignBudgetNotes'),
       modelo_cobro: strForm_('campaignBillingModel'),
       gasto_ads_total: parseNum($('campaignAdsSpend')?.value),
       iva_total: parseNum($('campaignTax')?.value),
@@ -275,10 +347,214 @@
     const channel = strForm_('campaignChannel').toLowerCase();
     const platform = strForm_('campaignPlatform').toLowerCase();
     const billingEl = $('campaignBillingModel');
+    const budgetModeEl = $('campaignBudgetMode');
     const isGoogleAds = channel.includes('google') || platform.includes('google');
 
     if (isGoogleAds && billingEl && !String(billingEl.value || '').trim()) {
       billingEl.value = 'Google Ads diario';
+    }
+    if (budgetModeEl && !budgetModeEl.dataset.userTouched) {
+      budgetModeEl.value = isGoogleAds ? 'daily_google' : (channel.includes('meta') || platform.includes('meta') || platform.includes('facebook') || platform.includes('instagram')) ? 'daily_meta' : budgetModeEl.value || 'monthly_cap';
+    }
+  }
+
+  // ---------- DASHBOARD FILTERS ----------
+  function wireDashboardFilters_() {
+    document.querySelectorAll('[data-period]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        setPeriodPreset_(btn.dataset.period || 'this_month');
+        await refreshDashboard_();
+      });
+    });
+
+    const apply = $('btnApplyPeriod');
+    if (apply) {
+      apply.addEventListener('click', async () => {
+        App.filters.from = $('filterFrom')?.value || null;
+        App.filters.to = $('filterTo')?.value || null;
+        markPeriodPreset_('custom');
+        await refreshDashboard_();
+      });
+    }
+  }
+
+  function setPeriodPreset_(preset) {
+    const now = new Date();
+    if (preset === 'last_month') {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), 0);
+      App.filters.from = toISODate(start);
+      App.filters.to = toISODate(end);
+    } else if (preset === 'all') {
+      App.filters.from = null;
+      App.filters.to = null;
+    } else {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      App.filters.from = toISODate(start);
+      App.filters.to = toISODate(end);
+      preset = 'this_month';
+    }
+    syncPeriodInputs_();
+    markPeriodPreset_(preset);
+  }
+
+  function syncPeriodInputs_() {
+    if ($('filterFrom')) $('filterFrom').value = App.filters.from || '';
+    if ($('filterTo')) $('filterTo').value = App.filters.to || '';
+  }
+
+  function markPeriodPreset_(active) {
+    document.querySelectorAll('[data-period]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.period === active);
+    });
+  }
+
+  function renderDashboardRangeLabel_() {
+    const el = $('dashboardRangeLabel');
+    if (!el) return;
+    if (!App.filters.from && !App.filters.to) {
+      el.textContent = 'Mostrando todos los periodos';
+      return;
+    }
+    el.textContent = `Mostrando ${formatShortDate_(App.filters.from)} - ${formatShortDate_(App.filters.to)}`;
+  }
+
+  // ---------- QUICK BUDGET ----------
+  function wireBudgetQuickEdit_() {
+    const form = $('budgetForm');
+    if (form) form.addEventListener('submit', onSubmitBudgetQuick_);
+
+    const select = $('budgetCampaignSelect');
+    if (select) select.addEventListener('change', () => openBudgetModal_(select.value));
+
+    document.querySelectorAll('[data-action="close-budget-modal"]').forEach(el => {
+      el.addEventListener('click', closeBudgetModal_);
+    });
+
+    document.addEventListener('budget:edit', (ev) => {
+      openBudgetModal_(ev.detail?.campaign_id || '');
+    });
+  }
+
+  function fillBudgetCampaignSelect_() {
+    const sel = $('budgetCampaignSelect');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Selecciona...</option>';
+    App.campaigns.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.campaign_id || '';
+      opt.textContent = c.nombre || c.campaign_id || '';
+      sel.appendChild(opt);
+    });
+  }
+
+  function openBudgetModal_(campaignId = '') {
+    const modal = $('budgetModal');
+    if (!modal) return;
+    const isGlobal = !campaignId;
+    modal.dataset.mode = isGlobal ? 'global' : 'campaign';
+
+    const campaignFields = modal.querySelectorAll('[data-budget-scope="campaign"]');
+    campaignFields.forEach(el => { el.style.display = isGlobal ? 'none' : ''; });
+    const titleEl = modal.querySelector('[data-budget-title]');
+    const descEl = modal.querySelector('[data-budget-desc]');
+    if (titleEl) titleEl.textContent = isGlobal ? 'Presupuesto máximo Musicala' : 'Presupuesto máximo de campaña';
+    if (descEl) descEl.textContent = isGlobal
+      ? 'Define un único techo global aprobado por Musicala. Se aplica a la suma del mes en curso.'
+      : 'Define el techo aprobado para esta campaña. Para finalizadas se compara contra el total de la campaña.';
+
+    if (isGlobal) {
+      const current = App.dashboard?.totals?.global_max_budget || '';
+      setCampaignFormValue_('budgetCampaignId', '');
+      setCampaignFormValue_('budgetMaxQuick', current);
+      setCampaignFormValue_('budgetCplQuick', '');
+      setCampaignFormValue_('budgetNotesQuick', '');
+    } else {
+      fillBudgetCampaignSelect_();
+      const id = campaignId || $('budgetCampaignSelect')?.value || '';
+      const campaign = App.campaigns.find(c => String(c.campaign_id || '') === String(id)) || App.campaigns[0] || null;
+      if (!campaign) {
+        UIx.toast('Primero crea una campana', 'warning');
+        return;
+      }
+      setCampaignFormValue_('budgetCampaignId', campaign.campaign_id || '');
+      setCampaignFormValue_('budgetCampaignSelect', campaign.campaign_id || '');
+      setCampaignFormValue_('budgetModeQuick', campaign.budget_mode || inferBudgetMode_(campaign));
+      setCampaignFormValue_('budgetMaxQuick', campaign.monthly_budget_target || campaign.presupuesto_mensual || '');
+      setCampaignFormValue_('budgetCplQuick', campaign.cpl_target || '');
+      setCampaignFormValue_('budgetNotesQuick', campaign.budget_notes || '');
+    }
+
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+    $('budgetMaxQuick')?.focus();
+  }
+
+  function closeBudgetModal_() {
+    const modal = $('budgetModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  async function onSubmitBudgetQuick_(ev) {
+    ev.preventDefault();
+    const modal = $('budgetModal');
+    const isGlobal = modal?.dataset.mode === 'global';
+    const maxBudget = parseNum($('budgetMaxQuick')?.value);
+    if (!maxBudget) {
+      UIx.toast('Escribe el presupuesto maximo aprobado', 'warning');
+      return;
+    }
+
+    if (isGlobal) {
+      const btn = $('budgetSaveBtn') || ev.submitter;
+      setButtonLoading(btn, true, 'Guardando...');
+      try {
+        const res = await safeCall_(() => API.setGlobalBudget(maxBudget));
+        if (!res?.ok) {
+          UIx.toast(res?.error || 'No se pudo guardar el presupuesto global', 'error');
+          return;
+        }
+        closeBudgetModal_();
+        UIx.toast('Presupuesto maximo global guardado', 'success');
+        await refreshDashboard_();
+      } finally {
+        setButtonLoading(btn, false);
+      }
+      return;
+    }
+
+    const id = $('budgetCampaignId')?.value || $('budgetCampaignSelect')?.value || '';
+    const campaign = App.campaigns.find(c => String(c.campaign_id || '') === String(id));
+    if (!campaign) {
+      UIx.toast('Selecciona una campana', 'warning');
+      return;
+    }
+
+    const payload = {
+      ...campaign,
+      budget_mode: strForm_('budgetModeQuick') || inferBudgetMode_(campaign),
+      monthly_budget_target: maxBudget,
+      cpl_target: parseNum($('budgetCplQuick')?.value),
+      budget_notes: strForm_('budgetNotesQuick'),
+    };
+
+    const btn = $('budgetSaveBtn') || ev.submitter;
+    setButtonLoading(btn, true, 'Guardando...');
+    try {
+      const res = await safeCall_(() => API.saveCampaign(payload));
+      if (!res?.ok) {
+        UIx.toast(res?.error || 'No se pudo guardar presupuesto', 'error');
+        return;
+      }
+      closeBudgetModal_();
+      UIx.toast('Presupuesto maximo guardado', 'success');
+      await refreshCampaigns_();
+      await refreshDashboard_();
+    } finally {
+      setButtonLoading(btn, false);
     }
   }
 
@@ -309,6 +585,7 @@
 
     if (window.UI?.fillCampaignSelect) UI.fillCampaignSelect('metricCampaign', App.campaigns);
     else fillSelectFallback_($('metricCampaign'), App.campaigns);
+    fillBudgetCampaignSelect_();
     updateMetricPlatformUI_();
   }
 
@@ -376,6 +653,7 @@
       campaign_id: $('metricCampaign')?.value || '',
       date: $('metricDate')?.value || '',
       platform_type: platformType,
+      spend_entry_type: strForm_('metricSpendEntryType') || 'daily_amount',
       spend,
       total_charge: parseNum($('metricTotalCharge')?.value),
       tax_amount: parseNum($('metricTaxAmount')?.value),
@@ -444,6 +722,14 @@
     if (text.includes('meta') || text.includes('facebook') || text.includes('instagram')) return 'meta';
     if (text.includes('google')) return 'google';
     return 'general';
+  }
+
+  function inferBudgetMode_(campaign) {
+    const text = `${campaign?.canal || ''} ${campaign?.plataforma || ''} ${campaign?.modelo_cobro || ''}`.toLowerCase();
+    if (text.includes('google')) return 'daily_google';
+    if ((parseNum(campaign?.cobro_total) > 0 || parseNum(campaign?.gasto_ads_total) > 0) && !parseNum(campaign?.presupuesto_diario)) return 'one_time';
+    if (text.includes('meta') || text.includes('facebook') || text.includes('instagram')) return parseNum(campaign?.presupuesto_diario) ? 'daily_meta' : 'one_time';
+    return 'monthly_cap';
   }
 
   function validateMetricPayload_(payload) {
@@ -734,6 +1020,13 @@
     if (x instanceof Date) return x;
     const d = new Date(x);
     return d;
+  }
+
+  function formatShortDate_(value) {
+    if (!value) return 'sin limite';
+    const parts = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!parts) return value;
+    return `${parts[3]}/${parts[2]}/${parts[1]}`;
   }
 
   function escapeHtml(s) {
