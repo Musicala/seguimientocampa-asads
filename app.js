@@ -570,7 +570,7 @@
   function normalizeDateInput_(value) {
     if (!value) return '';
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-    const d = new Date(value);
+    const d = window.parseLocalDate ? window.parseLocalDate(value) : parseLocalDateFallback_(value);
     return isNaN(d) ? '' : toISODate(d);
   }
 
@@ -1007,7 +1007,7 @@
 
   function toISODate(d) {
     if (window.toISODate) return window.toISODate(d);
-    const dt = (d instanceof Date) ? d : new Date(d);
+    const dt = (d instanceof Date) ? d : parseLocalDateFallback_(d);
     if (isNaN(dt)) return '';
     const y = dt.getFullYear();
     const m = String(dt.getMonth()+1).padStart(2,'0');
@@ -1018,8 +1018,15 @@
   function asDate(x) {
     if (!x) return new Date(NaN);
     if (x instanceof Date) return x;
-    const d = new Date(x);
+    const d = window.parseLocalDate ? window.parseLocalDate(x) : parseLocalDateFallback_(x);
     return d;
+  }
+
+  function parseLocalDateFallback_(value) {
+    const raw = String(value || '').trim();
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return new Date(value);
   }
 
   function formatShortDate_(value) {

@@ -29,8 +29,16 @@ function intFmt(x) {
   return Math.trunc(parseNum(x)).toLocaleString("es-CO");
 }
 
+function parseLocalDate(value) {
+  if (value instanceof Date) return value;
+  const raw = String(value || "").trim();
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return new Date(value);
+}
+
 function toISODate(value) {
-  const d = value instanceof Date ? value : new Date(value);
+  const d = parseLocalDate(value);
   if (isNaN(d)) return "";
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -53,5 +61,6 @@ window.moneyCOP = moneyCOP;
 window.numFmt = numFmt;
 window.pctFmt = pctFmt;
 window.intFmt = intFmt;
+window.parseLocalDate = parseLocalDate;
 window.toISODate = toISODate;
 window.escapeHtml = escapeHtml;

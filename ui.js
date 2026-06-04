@@ -624,12 +624,19 @@ const UI = (() => {
   function dateFmt_(x) {
     // muestra YYYY-MM-DD si viene Date o string
     if (window.toISODate) return window.toISODate(x);
-    const d = (x instanceof Date) ? x : new Date(x);
+    const d = (x instanceof Date) ? x : parseLocalDateFallback_(x);
     if (isNaN(d)) return String(x || "");
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
     return `${y}-${m}-${day}`;
+  }
+
+  function parseLocalDateFallback_(value) {
+    const raw = String(value || "").trim();
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return new Date(value);
   }
 
   function moneyCOP_(x) {
