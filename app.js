@@ -20,6 +20,8 @@
       from: null, // YYYY-MM-DD
       to: null,   // YYYY-MM-DD
       campaign_id: '',
+      platform: '',
+      status: '',
     },
   };
 
@@ -43,8 +45,10 @@
     wireTabs_();
     wireCampaigns_();
     wireMetrics_();
+    wireReality_();
     wireDashboardFilters_();
     wireBudgetQuickEdit_();
+    wireDecisionExports_();
 
     // Defaults: rango mes actual
     const now = new Date();
@@ -101,8 +105,10 @@
     // Fill selects
     if (window.UI?.fillCampaignSelect) {
       UI.fillCampaignSelect('metricCampaign', App.campaigns);
+      UI.fillCampaignSelect('realityCampaign', App.campaigns);
     } else {
       fillSelectFallback_($('metricCampaign'), App.campaigns);
+      fillSelectFallback_($('realityCampaign'), App.campaigns);
     }
     fillBudgetCampaignSelect_();
     updateMetricPlatformUI_();
@@ -129,7 +135,12 @@
   }
 
   async function refreshDashboard_() {
-    const filters = { from: App.filters.from, to: App.filters.to };
+    const filters = {
+      from: App.filters.from,
+      to: App.filters.to,
+      platform: App.filters.platform,
+      status: App.filters.status,
+    };
 
     setDashboardLoading_(true);
     let res;
@@ -146,17 +157,7 @@
     App.dashboard = res;
     const budgetById = {};
     (res.rows || []).forEach(r => { budgetById[String(r.campaign_id || '')] = r; });
-    App.campaigns = App.campaigns.map(c => {
-      const r = budgetById[String(c.campaign_id || '')];
-      if (!r) return c;
-      // Mezcla sin pisar datos buenos de la campana con valores vacios de la fila del dashboard.
-      const merged = { ...c };
-      Object.keys(r).forEach(k => {
-        const v = r[k];
-        if (v !== '' && v !== null && v !== undefined) merged[k] = v;
-      });
-      return merged;
-    });
+    App.campaigns = mergeCampaignRows_(App.campaigns, res.rows || []);
     if (window.UI?.renderCampaignTable) UI.renderCampaignTable(App.campaigns);
 
     // Render KPIs globales
@@ -181,7 +182,14 @@
         fecha_inicio: r.fecha_inicio || c.fecha_inicio || '',
       };
     });
+    renderExecutiveKPIs_(res.totals);
+    renderFunnelView_(res.funnel, res.insights);
+    renderTodayActions_(res.insights?.todayActions || []);
+    refreshMarketingTasks_();
+
     if (window.UI?.renderBudgetControl) UI.renderBudgetControl(budgetRows, res.totals);
+    if (window.UI?.renderDecisionPanel) UI.renderDecisionPanel(res.insights, res.rows, res.totals);
+    if (window.UI?.renderWinnerCampaigns) UI.renderWinnerCampaigns(res.insights?.winners || [], res.insights?.finishedWinners || []);
     renderDashboardRangeLabel_();
 
     // Resumen visual de rendimiento
@@ -196,6 +204,12 @@
   function wireCampaigns_() {
     const btnNew = $('btnNewCampaign');
     if (btnNew) btnNew.addEventListener('click', onNewCampaign_);
+    const btnImport = $('btnImportWorkbook');
+    const inputImport = $('workbookImportInput');
+    if (btnImport && inputImport) {
+      btnImport.addEventListener('click', () => inputImport.click());
+      inputImport.addEventListener('change', onImportWorkbook_);
+    }
     const form = $('campaignForm');
     if (form) form.addEventListener('submit', onSubmitCampaign_);
     ['campaignPlatform', 'campaignChannel'].forEach(id => {
@@ -214,10 +228,47 @@
       const id = ev.detail?.campaign_id || '';
       if (id) onEditCampaign_(id);
     });
+    document.addEventListener('campaign:pause', (ev) => {
+      const id = ev.detail?.campaign_id || '';
+      if (id) onPauseCampaign_(id);
+    });
+    document.addEventListener('campaign:delete', (ev) => {
+      const id = ev.detail?.campaign_id || '';
+      if (id) onDeleteCampaign_(id);
+    });
+    document.addEventListener('campaign:reactivate', (ev) => {
+      const id = ev.detail?.campaign_id || '';
+      if (id) onReactivateCampaign_(id);
+    });
   }
 
   function onNewCampaign_() {
     openCampaignModal_();
+  }
+
+  async function onImportWorkbook_(ev) {
+    const file = ev.target?.files?.[0];
+    if (!file) return;
+    const btn = $('btnImportWorkbook');
+    setButtonLoading(btn, true, 'Importando...');
+    try {
+      const res = await safeCall_(() => API.importMarketingWorkbook(file));
+      if (!res?.ok) {
+        UIx.toast(res?.error || 'No se pudo importar el Excel', 'error');
+        return;
+      }
+      const realityMsg = res.realityImported ? ` y ${res.realityImported} de realidad comercial` : '';
+      UIx.toast(`Importado: ${res.campaignsImported || 0} campanas, ${res.metricsImported || 0} metricas${realityMsg}`, 'success');
+      if (res.skippedRows) {
+        UIx.toast(`${res.skippedRows} filas omitidas. ${(res.warnings || []).slice(0, 3).join(' | ')}`, 'warning');
+      }
+      await refreshCampaigns_();
+      await refreshRecentMetrics_();
+      await refreshDashboard_();
+    } finally {
+      setButtonLoading(btn, false);
+      ev.target.value = '';
+    }
   }
 
   function onEditCampaign_(campaignId) {
@@ -227,6 +278,54 @@
       return;
     }
     openCampaignModal_(current);
+  }
+
+  async function onPauseCampaign_(campaignId) {
+    const current = App.campaigns.find(c => String(c.campaign_id || '') === String(campaignId));
+    if (!current) return;
+    if (!confirm(`Pausar la campana "${current.nombre || current.name || campaignId}"?`)) return;
+
+    const res = await safeCall_(() => API.pauseCampaign(campaignId));
+    if (!res?.ok) {
+      UIx.toast(res?.error || 'No se pudo pausar la campana', 'error');
+      return;
+    }
+
+    UIx.toast('Campana pausada', 'success');
+    await refreshCampaigns_();
+    await refreshDashboard_();
+  }
+
+  async function onDeleteCampaign_(campaignId) {
+    const current = App.campaigns.find(c => String(c.campaign_id || '') === String(campaignId));
+    if (!current) return;
+    if (!confirm(`Archivar la campana "${current.nombre || current.name || campaignId}"? No se borra: deja de aparecer en la lista pero conserva sus metricas.`)) return;
+
+    const res = await safeCall_(() => API.deleteCampaign(campaignId));
+    if (!res?.ok) {
+      UIx.toast(res?.error || 'No se pudo archivar la campana', 'error');
+      return;
+    }
+
+    UIx.toast('Campana archivada', 'success');
+    await refreshCampaigns_();
+    await refreshDashboard_();
+  }
+
+  async function onReactivateCampaign_(campaignId) {
+    const current = App.campaigns.find(c => String(c.campaign_id || '') === String(campaignId));
+    if (!current) return;
+    if (!confirm(`Reactivar "${current.nombre || current.name || campaignId}" como una nueva campana activa?`)) return;
+
+    const res = await safeCall_(() => API.reactivateCampaign(campaignId));
+    if (!res?.ok) {
+      UIx.toast(res?.error || 'No se pudo reactivar la campana', 'error');
+      return;
+    }
+
+    UIx.toast('Campana reactivada', 'success');
+    await refreshCampaigns_();
+    await refreshDashboard_();
   }
 
   async function onSubmitCampaign_(ev) {
@@ -372,6 +471,8 @@
       apply.addEventListener('click', async () => {
         App.filters.from = $('filterFrom')?.value || null;
         App.filters.to = $('filterTo')?.value || null;
+        App.filters.platform = $('filterPlatform')?.value || '';
+        App.filters.status = $('filterStatus')?.value || '';
         markPeriodPreset_('custom');
         await refreshDashboard_();
       });
@@ -402,6 +503,8 @@
   function syncPeriodInputs_() {
     if ($('filterFrom')) $('filterFrom').value = App.filters.from || '';
     if ($('filterTo')) $('filterTo').value = App.filters.to || '';
+    if ($('filterPlatform')) $('filterPlatform').value = App.filters.platform || '';
+    if ($('filterStatus')) $('filterStatus').value = App.filters.status || '';
   }
 
   function markPeriodPreset_(active) {
@@ -414,10 +517,326 @@
     const el = $('dashboardRangeLabel');
     if (!el) return;
     if (!App.filters.from && !App.filters.to) {
-      el.textContent = 'Mostrando todos los periodos';
+      el.textContent = filterSummary_('Mostrando todos los periodos');
       return;
     }
-    el.textContent = `Mostrando ${formatShortDate_(App.filters.from)} - ${formatShortDate_(App.filters.to)}`;
+    el.textContent = filterSummary_(`Mostrando ${formatShortDate_(App.filters.from)} - ${formatShortDate_(App.filters.to)}`);
+  }
+
+  function filterSummary_(base) {
+    const parts = [];
+    if (App.filters.platform) parts.push(`plataforma ${App.filters.platform}`);
+    if (App.filters.status) parts.push(`estado ${App.filters.status}`);
+    return parts.length ? `${base} (${parts.join(', ')})` : base;
+  }
+
+  // ---------- PANEL EJECUTIVO ----------
+  function renderExecutiveKPIs_(totals) {
+    const el = $('executiveKPIs');
+    if (!el || !totals) return;
+    const cards = [
+      ['Gasto total', moneyCOP(totals.spend)],
+      ['Contactos nuevos', intFmt(totals.real_new_contacts)],
+      ['Leads calificados', intFmt(totals.real_qualified_leads)],
+      ['Clases de prueba', intFmt(totals.real_trial_classes)],
+      ['Matriculas', intFmt(totals.real_enrollments)],
+      ['Ingreso real', moneyCOP(totals.real_revenue)],
+      ['ROAS real', numFmt(totals.real_roas, 2)],
+      ['Costo por matricula', moneyCOP(totals.cost_per_enrollment)],
+      ['Presupuesto usado', pctFmt(totals.budget_used_pct)],
+      ['Presupuesto restante', moneyCOP(totals.budget_remaining)],
+    ];
+    el.innerHTML = `<div class="exec-kpi-grid">${cards.map(([label, value]) =>
+      `<div class="exec-kpi"><span class="exec-kpi-value">${escapeHtmlApp_(value)}</span><span class="exec-kpi-label">${escapeHtmlApp_(label)}</span></div>`
+    ).join('')}</div>`;
+  }
+
+  function renderFunnelView_(funnel, insights) {
+    const el = $('funnelView');
+    if (!el) return;
+    const steps = funnel || [];
+    if (!steps.length) { el.innerHTML = '<p class="muted">Sin datos de embudo.</p>'; return; }
+    const max = Math.max(...steps.map(s => Number(s.value) || 0), 1);
+    const bars = steps.map(s => {
+      const val = Number(s.value) || 0;
+      const pct = Math.max(2, Math.round((val / max) * 100));
+      const text = s.money ? moneyCOP(val) : intFmt(val);
+      return `<div class="funnel-step">
+        <span class="funnel-label">${escapeHtmlApp_(s.label)}</span>
+        <span class="funnel-bar"><span class="funnel-fill" style="width:${pct}%"></span></span>
+        <span class="funnel-value">${escapeHtmlApp_(text)}</span>
+      </div>`;
+    }).join('');
+    const leaks = (insights?.funnelLeaks || []);
+    const leaksHtml = leaks.length
+      ? `<div class="funnel-leaks">${leaks.map(l => `<span class="leak leak-${l.severity}">Fuga: ${escapeHtmlApp_(l.step)}</span>`).join('')}</div>`
+      : '';
+    el.innerHTML = `<div class="funnel">${bars}</div>${leaksHtml}`;
+  }
+
+  function renderTodayActions_(actions) {
+    const el = $('todayActions');
+    if (!el) return;
+    if (!actions.length) { el.innerHTML = '<p class="muted">Sin acciones prioritarias hoy. Registra mas realidad comercial para obtener recomendaciones.</p>'; return; }
+    App._todayActions = actions;
+    el.innerHTML = actions.map((a, i) => `
+      <div class="today-action prio-${escapeHtmlApp_(a.priority)}">
+        <div class="today-action-head">
+          <span class="badge badge-${escapeHtmlApp_(a.priority)}">${escapeHtmlApp_((a.priority || '').toUpperCase())}</span>
+          <strong>${escapeHtmlApp_(a.campaignName || a.title)}</strong>
+          <span class="today-action-type">${escapeHtmlApp_(a.title)}</span>
+          <button type="button" class="btn-mini" data-add-task="${i}">+ Tarea</button>
+        </div>
+        <p class="today-action-reason">${escapeHtmlApp_(a.reason)}</p>
+        <p class="today-action-do"><strong>Accion:</strong> ${escapeHtmlApp_(a.action)}</p>
+        <p class="today-action-metric muted">${escapeHtmlApp_(a.metric)}</p>
+      </div>`).join('');
+    el.querySelectorAll('[data-add-task]').forEach(btn => {
+      btn.addEventListener('click', () => onAddTaskFromAction_(Number(btn.dataset.addTask)));
+    });
+  }
+
+  async function onAddTaskFromAction_(index) {
+    const action = (App._todayActions || [])[index];
+    if (!action) return;
+    const res = await safeCall_(() => API.addTaskFromAction(action));
+    if (!res?.ok) { UIx.toast(res?.error || 'No se pudo crear la tarea', 'error'); return; }
+    UIx.toast('Tarea creada', 'success');
+    await refreshMarketingTasks_();
+  }
+
+  async function refreshMarketingTasks_() {
+    const el = $('marketingTasks');
+    if (!el) return;
+    const res = await safeCall_(() => API.listMarketingTasks());
+    if (!res?.ok) { el.innerHTML = '<p class="muted">No se pudieron cargar las tareas.</p>'; return; }
+    renderMarketingTasks_(res.rows || []);
+  }
+
+  function renderMarketingTasks_(tasks) {
+    const el = $('marketingTasks');
+    if (!el) return;
+    const open = tasks.filter(t => t.status !== 'hecha' && t.status !== 'descartada');
+    if (!open.length) { el.innerHTML = '<p class="muted">Sin tareas pendientes. Usa "+ Tarea" en las acciones recomendadas.</p>'; return; }
+    const order = { high: 0, medium: 1, low: 2 };
+    el.innerHTML = open
+      .sort((a, b) => (order[a.priority] ?? 1) - (order[b.priority] ?? 1))
+      .map(t => `
+        <div class="task-row prio-${escapeHtmlApp_(t.priority)}">
+          <div class="task-main">
+            <span class="badge badge-${escapeHtmlApp_(t.priority)}">${escapeHtmlApp_((t.priority || '').toUpperCase())}</span>
+            <strong>${escapeHtmlApp_(t.campaignName || '')}</strong>
+            <span>${escapeHtmlApp_(t.title)}</span>
+            <span class="task-status muted">${escapeHtmlApp_(t.status)}</span>
+          </div>
+          <div class="task-actions">
+            <button type="button" class="btn-mini" data-task-status="en_proceso" data-task-id="${escapeHtmlApp_(t.id)}">En proceso</button>
+            <button type="button" class="btn-mini" data-task-status="hecha" data-task-id="${escapeHtmlApp_(t.id)}">Hecha</button>
+            <button type="button" class="btn-mini" data-task-status="descartada" data-task-id="${escapeHtmlApp_(t.id)}">Descartar</button>
+          </div>
+        </div>`).join('');
+    el.querySelectorAll('[data-task-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const res = await safeCall_(() => API.updateMarketingTask(btn.dataset.taskId, { status: btn.dataset.taskStatus }));
+        if (!res?.ok) { UIx.toast(res?.error || 'No se pudo actualizar la tarea', 'error'); return; }
+        await refreshMarketingTasks_();
+      });
+    });
+  }
+
+  function escapeHtmlApp_(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function wireDecisionExports_() {
+    $('btnDownloadDecisionReport')?.addEventListener('click', () => {
+      if (!App.dashboard) {
+        UIx.toast('Primero carga el dashboard', 'warning');
+        return;
+      }
+      downloadTextFile_(`informe-marketing-musicala-${toISODate(new Date())}.md`, buildDecisionReport_());
+      UIx.toast('Informe descargado', 'success');
+    });
+
+    $('btnCopyDecisionPrompt')?.addEventListener('click', async () => {
+      if (!App.dashboard) {
+        UIx.toast('Primero carga el dashboard', 'warning');
+        return;
+      }
+      const prompt = buildDecisionPrompt_();
+      try {
+        await navigator.clipboard.writeText(prompt);
+        UIx.toast('Prompt copiado para IA', 'success');
+      } catch (_) {
+        downloadTextFile_(`prompt-ia-marketing-musicala-${toISODate(new Date())}.txt`, prompt);
+        UIx.toast('No pude copiarlo; lo descargue como TXT', 'warning');
+      }
+    });
+  }
+
+  function buildDecisionReport_() {
+    const d = App.dashboard || {};
+    const totals = d.totals || {};
+    const rows = (d.rows || []).slice().sort((a, b) => parseNum(b.spend) - parseNum(a.spend));
+    const best = (d.rankings?.bestROAS || []).slice(0, 5);
+    const waste = (d.rankings?.waste || []).slice(0, 5);
+    const winners = (d.insights?.winners || []).slice(0, 8);
+    const alerts = d.insights?.alerts || [];
+    const commercialAlerts = d.insights?.commercialAlerts || [];
+    const todayActions = (d.insights?.todayActions || []).slice(0, 5);
+    const funnel = d.funnel || [];
+    const generatedAt = new Date().toLocaleString('es-CO');
+
+    return [
+      '# Informe de marketing Musicala',
+      '',
+      `Generado: ${generatedAt}`,
+      `Rango: ${currentFilterLabel_()}`,
+      '',
+      '## Resumen ejecutivo',
+      '',
+      `- Inversion total: ${moneyCOP(totals.spend)}`,
+      `- Presupuesto mensual: ${moneyCOP(totals.budget_monthly_target)} | Usado: ${pctFmt(totals.budget_used_pct)} | Restante: ${moneyCOP(totals.budget_remaining)}`,
+      `- Leads / mensajes totales: ${intFmt(totals.leads)}`,
+      `- Costo por lead: ${moneyCOP(totals.cpl)}`,
+      `- Clics totales: ${intFmt(totals.link_clicks || totals.clicks)}`,
+      `- Campanas activas: ${intFmt(totals.active_campaigns)}`,
+      '',
+      '### Realidad comercial Musicala',
+      '',
+      `- Contactos nuevos: ${intFmt(totals.real_new_contacts)}`,
+      `- Leads calificados: ${intFmt(totals.real_qualified_leads)}`,
+      `- Clases de prueba: ${intFmt(totals.real_trial_classes)}`,
+      `- Matriculas: ${intFmt(totals.real_enrollments)}`,
+      `- Ingreso real: ${moneyCOP(totals.real_revenue)}`,
+      `- Costo por contacto: ${moneyCOP(totals.cost_per_contact)}`,
+      `- Costo por lead calificado: ${moneyCOP(totals.cost_per_qualified_lead)}`,
+      `- Costo por clase de prueba: ${moneyCOP(totals.cost_per_trial)}`,
+      `- Costo por matricula: ${moneyCOP(totals.cost_per_enrollment)}`,
+      `- ROAS real: ${numFmt(totals.real_roas, 2)}`,
+      '',
+      '## Embudo',
+      '',
+      funnel.length ? funnel.map(s => `- ${s.label}: ${s.money ? moneyCOP(s.value) : intFmt(s.value)}`).join('\n') : '- Sin datos de embudo.',
+      '',
+      '## Acciones recomendadas hoy',
+      '',
+      todayActions.length
+        ? todayActions.map(a => `- [${a.priority.toUpperCase()}] ${a.campaignName}: ${a.title}. ${a.reason} Accion: ${a.action} (${a.metric})`).join('\n')
+        : '- Sin acciones prioritarias; registrar mas datos comerciales.',
+      '',
+      '## Lectura rapida',
+      '',
+      decisionNarrative_(totals),
+      '',
+      '## Alertas del periodo',
+      '',
+      alerts.length ? alerts.map(a => `- ${a.title}: ${a.body}`).join('\n') : '- Sin alertas criticas.',
+      '',
+      '## Alertas comerciales',
+      '',
+      commercialAlerts.length ? commercialAlerts.map(a => `- ${a.title}: ${a.body}`).join('\n') : '- Sin alertas comerciales.',
+      '',
+      '## Campanas ganadoras / reactivables',
+      '',
+      winners.length ? markdownCampaignTable_(winners) : 'Sin ganadoras claras todavia.',
+      '',
+      '## Campanas por gasto',
+      '',
+      markdownCampaignTable_(rows.slice(0, 20)),
+      '',
+      '## Mejores senales',
+      '',
+      best.length ? markdownCampaignTable_(best) : 'Sin datos suficientes.',
+      '',
+      '## Alertas',
+      '',
+      waste.length ? markdownCampaignTable_(waste) : 'No hay campanas con gasto y cero leads en este rango.',
+      '',
+      '## Siguientes preguntas recomendadas',
+      '',
+      '- Que campanas deberian escalarse, pausarse o cambiarse?',
+      '- Hay mucho gasto sin leads, ventas o ingresos?',
+      '- Que dato falta para decidir con menos riesgo?',
+      '- Que experimento pequeno conviene correr esta semana?',
+      '',
+    ].join('\n');
+  }
+
+  function buildDecisionPrompt_() {
+    return [
+      'Actua como estratega senior de marketing para una escuela de musica llamada Musicala.',
+      'Necesito que me ayudes a tomar decisiones con base UNICAMENTE en los datos que te comparto. No inventes datos ni supongas resultados que no esten aqui.',
+      '',
+      'Objetivo del analisis:',
+      '- Decidir que campanas escalar, pausar, optimizar, reactivar o seguir midiendo.',
+      '- Usar la REALIDAD COMERCIAL (contactos, leads calificados, clases de prueba, matriculas, ingreso real) y no solo leads o ventas de plataforma.',
+      '- Identificar fugas del embudo, riesgos de gasto y datos faltantes.',
+      '- Proponer acciones concretas para hoy y para la proxima semana.',
+      '',
+      'Contexto:',
+      '- Los datos vienen de registros manuales en Firestore (pauta + realidad comercial de Musicala).',
+      '- Todavia no estan conectadas APIs externas de Meta Ads o Google Ads.',
+      '- Distingue: "revenue/sales" (plataforma o manual) de "real_revenue/matriculas" (realidad comercial Musicala).',
+      '- Puede haber campos vacios; si falta informacion, dilo como brecha de medicion. NO INVENTES DATOS.',
+      '',
+      'Formato de respuesta esperado (separa claramente estas secciones):',
+      '1. Diagnostico ejecutivo en 5 bullets (incluye lectura del embudo).',
+      '2. Decisiones inmediatas: tabla con campana, decision, razon, accion concreta y metrica que la justifica.',
+      '3. Riesgos: gasto sin retorno, fugas de embudo y datos faltantes.',
+      '4. Experimentos sugeridos para esta semana.',
+      '5. Proximo presupuesto recomendado por campana y global.',
+      '6. Campanas finalizadas que vale la pena reactivar y con que presupuesto inicial.',
+      '',
+      'Datos:',
+      '',
+      buildDecisionReport_(),
+    ].join('\n');
+  }
+
+  function markdownCampaignTable_(rows) {
+    if (!rows.length) return 'Sin campanas para mostrar.';
+    const lines = [
+      '| Campana | Plataforma | Estado | Gasto | Leads | CPL | Contactos | Calif. | Pruebas | Matriculas | Costo/Matr. | Ing. real | ROAS real |',
+      '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+    ];
+    rows.forEach(r => {
+      lines.push(`| ${mdCell_(r.nombre || r.name || r.campaign_id)} | ${mdCell_(r.platform || r.platform_type || r.canal)} | ${mdCell_(r.estado || r.status)} | ${moneyCOP(r.spend)} | ${intFmt(r.leads)} | ${moneyCOP(r.cpl)} | ${intFmt(r.real_new_contacts)} | ${intFmt(r.real_qualified_leads)} | ${intFmt(r.real_trial_classes)} | ${intFmt(r.real_enrollments)} | ${moneyCOP(r.cost_per_enrollment)} | ${moneyCOP(r.real_revenue)} | ${numFmt(r.real_roas, 2)} |`);
+    });
+    return lines.join('\n');
+  }
+
+  function decisionNarrative_(totals) {
+    const spend = parseNum(totals.spend);
+    const leads = parseNum(totals.leads);
+    const sales = parseNum(totals.sales);
+    if (!spend) return 'Todavia no hay inversion registrada en el rango. La prioridad es registrar gasto y resultados reales antes de decidir.';
+    if (!leads) return `Hay ${moneyCOP(spend)} de inversion sin leads registrados. Revisar campanas, mensajes, segmentacion y registro de contactos antes de aumentar presupuesto.`;
+    if (!sales) return `Hay ${intFmt(leads)} leads con CPL de ${moneyCOP(totals.cpl)}, pero no hay ventas registradas. La decision depende de cerrar el seguimiento comercial.`;
+    return `El rango muestra ${intFmt(leads)} leads, ${intFmt(sales)} ventas y ROAS ${numFmt(totals.roas, 2)}. Priorizar campanas con menor CPL y ventas reales.`;
+  }
+
+  function currentFilterLabel_() {
+    const range = (!App.filters.from && !App.filters.to)
+      ? 'Todos los periodos'
+      : `${formatShortDate_(App.filters.from)} - ${formatShortDate_(App.filters.to)}`;
+    return filterSummary_(range);
+  }
+
+  function mdCell_(value) {
+    return String(value || '-').replace(/\|/g, '/').replace(/\n/g, ' ');
+  }
+
+  function downloadTextFile_(filename, content) {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   // ---------- QUICK BUDGET ----------
@@ -578,15 +997,46 @@
     const list = await safeCall_(API.listCampaigns);
     if (!list?.ok) return;
 
-    App.campaigns = list.campaigns || [];
+    App.campaigns = mergeCampaignRows_(list.campaigns || [], App.dashboard?.rows || []);
 
     if (window.UI?.renderCampaignTable) UI.renderCampaignTable(App.campaigns);
     else renderCampaignTableFallback_(App.campaigns);
 
     if (window.UI?.fillCampaignSelect) UI.fillCampaignSelect('metricCampaign', App.campaigns);
     else fillSelectFallback_($('metricCampaign'), App.campaigns);
+    if (window.UI?.fillCampaignSelect) UI.fillCampaignSelect('realityCampaign', App.campaigns);
+    else fillSelectFallback_($('realityCampaign'), App.campaigns);
     fillBudgetCampaignSelect_();
     updateMetricPlatformUI_();
+  }
+
+  function mergeCampaignRows_(campaigns, dashboardRows) {
+    if (!(campaigns || []).length && (dashboardRows || []).length) {
+      console.warn('[Marketing Musicala] La lista de campaigns vino vacia; usando filas del dashboard como respaldo.', dashboardRows.length);
+    }
+    const byId = new Map();
+    (campaigns || []).forEach(c => {
+      const id = String(c.campaign_id || c.id || '').trim();
+      if (id) byId.set(id, { ...c });
+    });
+
+    (dashboardRows || []).forEach(r => {
+      const id = String(r.campaign_id || r.id || '').trim();
+      if (!id) return;
+      const current = byId.get(id) || {};
+      const merged = { ...current };
+      Object.keys(r).forEach(k => {
+        const v = r[k];
+        if (v !== '' && v !== null && v !== undefined) merged[k] = v;
+      });
+      merged.campaign_id = merged.campaign_id || id;
+      merged.id = merged.id || id;
+      merged.nombre = merged.nombre || merged.name || r.name || id;
+      merged.estado = merged.estado || r.estado || r.status || 'Activa';
+      byId.set(id, merged);
+    });
+
+    return Array.from(byId.values());
   }
 
   // ---------- METRICS ----------
@@ -1020,6 +1470,47 @@
     if (x instanceof Date) return x;
     const d = window.parseLocalDate ? window.parseLocalDate(x) : parseLocalDateFallback_(x);
     return d;
+  }
+
+  function wireReality_() {
+    const form = $('realityForm');
+    if (form) form.addEventListener('submit', onSubmitReality_);
+    const dateEl = $('realityDate');
+    if (dateEl && !dateEl.value) dateEl.value = toISODate(new Date());
+  }
+
+  async function onSubmitReality_(ev) {
+    ev.preventDefault();
+    const btn = $('realitySaveBtn') || ev.submitter;
+    const payload = {
+      date: $('realityDate')?.value || '',
+      sourceCampaignId: $('realityCampaign')?.value || '',
+      newContacts: intForm_('realityNewContacts'),
+      qualifiedLeads: intForm_('realityQualifiedLeads'),
+      trialClasses: intForm_('realityTrialClasses'),
+      enrollments: intForm_('realityEnrollments'),
+      serviceSold: strForm_('realityServiceSold'),
+      revenue: parseNum($('realityRevenue')?.value),
+      notes: strForm_('realityNotes'),
+    };
+    if (!payload.date) {
+      UIx.toast('Selecciona una fecha', 'warning');
+      return;
+    }
+    setButtonLoading(btn, true, 'Guardando...');
+    try {
+      const res = await safeCall_(() => API.addMusicalaReality(payload));
+      if (!res?.ok) {
+        UIx.toast(res?.error || 'No se pudo guardar realidad Musicala', 'error');
+        return;
+      }
+      UIx.toast('Realidad Musicala guardada', 'success');
+      $('realityForm')?.reset();
+      if ($('realityDate')) $('realityDate').value = toISODate(new Date());
+      await refreshDashboard_();
+    } finally {
+      setButtonLoading(btn, false);
+    }
   }
 
   function parseLocalDateFallback_(value) {

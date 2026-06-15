@@ -58,6 +58,10 @@
       <div>
         <h2>Dashboard</h2>
         <p id="dashboardRangeLabel">Mes en curso</p>
+        <div class="decision-actions">
+          <button id="btnDownloadDecisionReport" type="button" class="btn-mini">Descargar informe</button>
+          <button id="btnCopyDecisionPrompt" type="button" class="btn-mini">Copiar prompt IA</button>
+        </div>
       </div>
       <div class="period-controls">
         <button type="button" class="btn-mini period-preset active" data-period="this_month">Este mes</button>
@@ -65,6 +69,23 @@
         <button type="button" class="btn-mini period-preset" data-period="all">Todo</button>
         <label>Desde<input type="date" id="filterFrom" /></label>
         <label>Hasta<input type="date" id="filterTo" /></label>
+        <label>Plataforma
+          <select id="filterPlatform">
+            <option value="">Todas</option>
+            <option value="meta">Meta</option>
+            <option value="google">Google Ads</option>
+            <option value="tiktok">TikTok</option>
+            <option value="otro">Otro</option>
+          </select>
+        </label>
+        <label>Estado
+          <select id="filterStatus">
+            <option value="">Todos</option>
+            <option value="activa">Activas</option>
+            <option value="pausada">Pausadas</option>
+            <option value="finalizada">Finalizadas</option>
+          </select>
+        </label>
         <button type="button" id="btnApplyPeriod" class="primary">Aplicar</button>
       </div>
     </div>
@@ -75,6 +96,31 @@
     </div>
 
     <div class="dashboard-grid">
+
+      <div class="card dashboard-wide">
+        <h3>KPIs ejecutivos</h3>
+        <div id="executiveKPIs"></div>
+      </div>
+
+      <div class="card dashboard-wide">
+        <h3>Embudo comercial</h3>
+        <div id="funnelView"></div>
+      </div>
+
+      <div class="card dashboard-wide">
+        <h3>Acciones recomendadas hoy</h3>
+        <div id="todayActions"></div>
+      </div>
+
+      <div class="card dashboard-wide">
+        <h3>Tareas de marketing</h3>
+        <div id="marketingTasks"></div>
+      </div>
+
+      <div class="card dashboard-wide">
+        <h3>Alertas y decisiones</h3>
+        <div id="decisionPanel"></div>
+      </div>
 
       <div class="card kpi-card">
         <h3>Resumen general</h3>
@@ -96,6 +142,11 @@
         <div id="rankingTable"></div>
       </div>
 
+      <div class="card dashboard-wide">
+        <h3>Campañas ganadoras</h3>
+        <div id="winnerCampaigns"></div>
+      </div>
+
     </div>
 
   </section>
@@ -106,9 +157,15 @@
 
     <div class="page-header">
       <h2>Campañas</h2>
-      <button id="btnNewCampaign" class="primary">
-        Nueva campaña
-      </button>
+      <div class="page-actions">
+        <button id="btnImportWorkbook" type="button">
+          Importar Excel
+        </button>
+        <input id="workbookImportInput" type="file" accept=".xlsx,.xls" hidden />
+        <button id="btnNewCampaign" class="primary">
+          Nueva campaña
+        </button>
+      </div>
     </div>
 
     <div class="card">
@@ -240,6 +297,22 @@
 
         <div id="metricsTable"></div>
 
+      </div>
+
+      <div class="card reality-card">
+        <h3>Realidad Musicala</h3>
+        <form id="realityForm">
+          <label>Fecha<input type="date" id="realityDate" required /></label>
+          <label>Campaña origen<select id="realityCampaign"></select></label>
+          <label>Contactos nuevos<input type="number" id="realityNewContacts" min="0" step="1" /></label>
+          <label>Leads calificados<input type="number" id="realityQualifiedLeads" min="0" step="1" /></label>
+          <label>Clases de prueba<input type="number" id="realityTrialClasses" min="0" step="1" /></label>
+          <label>Matrículas<input type="number" id="realityEnrollments" min="0" step="1" /></label>
+          <label>Servicio vendido<input type="text" id="realityServiceSold" /></label>
+          <label>Ingreso real<input type="number" id="realityRevenue" min="0" step="1" /></label>
+          <label>Notas<textarea id="realityNotes" rows="2"></textarea></label>
+          <button id="realitySaveBtn" type="submit" class="primary">Guardar realidad</button>
+        </form>
       </div>
 
     </div>
@@ -449,10 +522,10 @@
 
 <script src="./utils.js?v=20260424-2"></script>
 <script src="./state.js?v=20260424-2"></script>
-<script src="./api.js?v=20260527-7"></script>
 <script src="./ui.js?v=20260527-7"></script>
 <script src="./charts.js?v=20260527-7"></script>
-<script src="./app.js?v=20260527-7"></script>
+<script type="module" src="./src/main.js?v=20260612-1"></script>
+<script src="./app.js?v=20260612-1"></script>
 
 </body>
 </html>

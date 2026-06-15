@@ -19,6 +19,9 @@ const Charts = (() => {
     const trend = daily.length > 1 ? renderTrend_(daily) : renderSingleDayBars_(best);
     const decision = decisionFor_(best);
     const budgetRhythm = renderBudgetRhythm_(rows);
+    const funnel = renderFunnel_(rows);
+    const campaignComparison = renderCampaignComparison_(rows);
+    const platformComparison = renderPlatformComparison_(rows);
 
     el.innerHTML = `
       <div class="performance-decision ${decision.tone}">
@@ -45,6 +48,9 @@ const Charts = (() => {
       </div>
 
       ${trend}
+      ${funnel}
+      ${campaignComparison}
+      ${platformComparison}
     `;
   }
 
@@ -122,6 +128,65 @@ const Charts = (() => {
     `;
   }
 
+  function renderFunnel_(rows) {
+    const totals = rows.reduce((acc, r) => {
+      acc.clicks += num_(r.link_clicks || r.clicks);
+      acc.leads += num_(r.leads);
+      acc.sales += num_(r.sales);
+      return acc;
+    }, { clicks: 0, leads: 0, sales: 0 });
+    const max = Math.max(totals.clicks, totals.leads, totals.sales, 1);
+    return `
+      <div class="trend-box">
+        <span class="eyebrow">Embudo</span>
+        <strong>Clics a leads a ventas</strong>
+        <div class="simple-bars">
+          ${bar_("Clics", totals.clicks, max)}
+          ${bar_("Leads", totals.leads, max)}
+          ${bar_("Ventas", totals.sales, max)}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCampaignComparison_(rows) {
+    const list = rows.slice().sort((a, b) => num_(b.spend) - num_(a.spend)).slice(0, 6);
+    if (!list.length) return "";
+    const max = Math.max(...list.map(r => num_(r.spend)), 1);
+    return `
+      <div class="trend-box">
+        <span class="eyebrow">Comparativo</span>
+        <strong>Gasto por campana</strong>
+        <div class="simple-bars">
+          ${list.map(r => bar_(r.nombre || r.campaign_id || "Campana", num_(r.spend), max, money_(r.spend))).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderPlatformComparison_(rows) {
+    const map = {};
+    rows.forEach(r => {
+      const platform = platformLabel_(r);
+      map[platform] = map[platform] || { label: platform, spend: 0, leads: 0, sales: 0 };
+      map[platform].spend += num_(r.spend);
+      map[platform].leads += num_(r.leads);
+      map[platform].sales += num_(r.sales);
+    });
+    const list = Object.values(map);
+    if (!list.length) return "";
+    const max = Math.max(...list.map(r => r.leads), 1);
+    return `
+      <div class="trend-box">
+        <span class="eyebrow">Plataformas</span>
+        <strong>Leads por canal</strong>
+        <div class="simple-bars">
+          ${list.map(r => bar_(`${r.label} (${money_(safeDiv_(r.spend, r.leads))} CPL)`, r.leads, max)).join("")}
+        </div>
+      </div>
+    `;
+  }
+
   function decisionFor_(row) {
     const spend = num_(row.spend);
     const messages = num_(row.leads);
@@ -183,14 +248,22 @@ const Charts = (() => {
     `;
   }
 
-  function bar_(label, value, max) {
+  function bar_(label, value, max, displayValue = null) {
     const pct = Math.max(3, Math.round((num_(value) / max) * 100));
     return `
       <div class="bar-row">
-        <div class="bar-label"><span>${esc_(label)}</span><strong>${int_(value)}</strong></div>
+        <div class="bar-label"><span>${esc_(label)}</span><strong>${esc_(displayValue || int_(value))}</strong></div>
         <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
       </div>
     `;
+  }
+
+  function platformLabel_(row) {
+    const text = `${row.platform || row.platform_type || row.canal || row.plataforma || ""}`.toLowerCase();
+    if (text.includes("meta") || text.includes("facebook") || text.includes("instagram")) return "Meta";
+    if (text.includes("google")) return "Google";
+    if (text.includes("tiktok")) return "TikTok";
+    return "Otro";
   }
 
   function num_(x) {

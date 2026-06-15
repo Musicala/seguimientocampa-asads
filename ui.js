@@ -46,6 +46,10 @@ const UI = (() => {
         ${totals.reported_spend ? kpiLine_("Gasto Ads reportado", moneyCOP_(totals.reported_spend)) : ""}
         ${kpiLine_("Mensajes iniciados", intFmt_(totals.leads))}
         ${kpiLine_("Costo por mensaje", moneyCOP_(totals.cpl))}
+        ${kpiLine_("Costo por venta", moneyCOP_(totals.cost_per_sale))}
+        ${kpiLine_("Lead a venta", pctFmt_(totals.lead_to_sale_rate))}
+        ${kpiLine_("Clic a lead", pctFmt_(totals.click_to_lead_rate))}
+        ${kpiLine_("Ingreso por lead", moneyCOP_(totals.revenue_per_lead))}
         ${kpiLine_("Clics al enlace", intFmt_(totals.link_clicks || totals.clicks))}
         ${kpiLine_("Costo por clic", moneyCOP_(totals.cpc))}
         ${kpiLine_("Reproducciones", intFmt_(totals.video_plays || totals.impressions))}
@@ -96,6 +100,45 @@ const UI = (() => {
     `;
   }
 
+  function renderDecisionPanel(insights, rows, totals) {
+    const el = $("decisionPanel");
+    if (!el) return;
+    const alerts = insights?.alerts || [];
+    const attention = insights?.needsAttention || [];
+    el.innerHTML = `
+      <div class="decision-grid">
+        <div class="decision-alert-list">
+          ${alerts.length ? alerts.map(alertCard_).join("") : alertCard_({ tone: "good", title: "Sin alertas criticas", body: "Los datos actuales no muestran bloqueos urgentes." })}
+        </div>
+        <div class="decision-next-actions">
+          <strong>Prioridad operativa</strong>
+          ${nextActionList_(attention, rows)}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderWinnerCampaigns(winners, finishedWinners) {
+    const el = $("winnerCampaigns");
+    if (!el) return;
+    const list = (winners || []).slice(0, 8);
+    if (!list.length) {
+      el.innerHTML = `<div class="muted">Todavia no hay campanas ganadoras claras. Registra ventas, ingresos y leads para detectarlas.</div>`;
+      return;
+    }
+    el.innerHTML = `
+      <div class="winner-list">
+        ${list.map(winnerCard_).join("")}
+      </div>
+      ${finishedWinners?.length ? `<div class="reactivation-note">Hay ${intFmt_(finishedWinners.length)} campana(s) finalizada(s) con senales para reactivar.</div>` : ""}
+    `;
+    el.querySelectorAll('[data-action="reactivate-campaign"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.dispatchEvent(new CustomEvent("campaign:reactivate", { detail: { campaign_id: btn.getAttribute("data-id") || "" } }));
+      });
+    });
+  }
+
   function renderCampaignTable(campaigns) {
     const tb = $("campaignTable");
     if (!tb) return;
@@ -128,6 +171,9 @@ const UI = (() => {
         <td style="text-align:right">
           <button class="btn-mini" data-action="edit-budget" data-id="${escAttr_(c.campaign_id || "")}">Presupuesto</button>
           <button class="btn-mini" data-action="edit-campaign" data-id="${escAttr_(c.campaign_id || "")}">Editar</button>
+          ${String(c.estado || "").toLowerCase().includes("fin") ? `<button class="btn-mini" data-action="reactivate-campaign" data-id="${escAttr_(c.campaign_id || "")}">Reactivar</button>` : ""}
+          <button class="btn-mini" data-action="pause-campaign" data-id="${escAttr_(c.campaign_id || "")}">Pausar</button>
+          <button class="btn-mini danger" data-action="delete-campaign" data-id="${escAttr_(c.campaign_id || "")}">Eliminar</button>
           <button class="btn-mini" data-action="copy-id" data-id="${escAttr_(c.campaign_id || "")}">Copiar ID</button>
         </td>
       `;
@@ -153,6 +199,27 @@ const UI = (() => {
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-id") || "";
         document.dispatchEvent(new CustomEvent("budget:edit", { detail: { campaign_id: id } }));
+      });
+    });
+
+    tb.querySelectorAll('button[data-action="pause-campaign"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-id") || "";
+        document.dispatchEvent(new CustomEvent("campaign:pause", { detail: { campaign_id: id } }));
+      });
+    });
+
+    tb.querySelectorAll('button[data-action="delete-campaign"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-id") || "";
+        document.dispatchEvent(new CustomEvent("campaign:delete", { detail: { campaign_id: id } }));
+      });
+    });
+
+    tb.querySelectorAll('button[data-action="reactivate-campaign"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-id") || "";
+        document.dispatchEvent(new CustomEvent("campaign:reactivate", { detail: { campaign_id: id } }));
       });
     });
   }
@@ -275,6 +342,45 @@ const UI = (() => {
           }).join("")}
         </tbody>
       </table>
+    `;
+  }
+
+  function alertCard_(item) {
+    return `
+      <div class="insight-alert ${escAttr_(item.tone || "info")}">
+        <strong>${esc_(item.title || "")}</strong>
+        <span>${esc_(item.body || "")}</span>
+      </div>
+    `;
+  }
+
+  function nextActionList_(attention, rows) {
+    const source = (attention?.length ? attention : rows || []).slice(0, 5);
+    if (!source.length) return `<p class="muted">Crea o importa campanas para generar recomendaciones.</p>`;
+    return `
+      <ul class="next-action-list">
+        ${source.map(r => `<li><strong>${esc_(r.nombre || r.name || r.campaign_id || "Campana")}</strong><span>${esc_(r.decision?.label || "Medir")} - ${esc_(r.decision?.nextAction || "Completar datos.")}</span></li>`).join("")}
+      </ul>
+    `;
+  }
+
+  function winnerCard_(row) {
+    const canReactivate = String(row.estado || row.status || "").toLowerCase().includes("fin");
+    return `
+      <article class="winner-card ${escAttr_(row.decision?.type || "watch")}">
+        <div>
+          <strong>${esc_(row.nombre || row.name || row.campaign_id || "Campana")}</strong>
+          <span>${esc_(row.decision?.label || "Ganadora")}</span>
+        </div>
+        <div class="winner-metrics">
+          ${budgetStat_("Leads", intFmt_(row.leads))}
+          ${budgetStat_("CPL", moneyCOP_(row.cpl))}
+          ${budgetStat_("Ventas", intFmt_(row.sales))}
+          ${budgetStat_("ROAS", numFmt_(row.roas, 2))}
+        </div>
+        <p>${esc_(row.decision?.reason || "")}</p>
+        ${canReactivate ? `<button type="button" class="btn-mini" data-action="reactivate-campaign" data-id="${escAttr_(row.campaign_id || "")}">Reactivar</button>` : ""}
+      </article>
     `;
   }
 
@@ -710,6 +816,10 @@ const UI = (() => {
         background: rgba(12,65,196,0.06);
         border-color: rgba(12,65,196,0.25);
       }
+      .btn-mini.danger{
+        color: #b91c1c;
+        border-color: rgba(185,28,28,0.22);
+      }
       .muted{ color: #6b7280; }
     `;
     document.head.appendChild(st);
@@ -719,6 +829,8 @@ const UI = (() => {
     renderGlobalKPIs,
     renderDashboardKPIs,
     renderRankingTable,
+    renderDecisionPanel,
+    renderWinnerCampaigns,
     renderBudgetControl,
     renderCampaignTable,
     fillCampaignSelect,
