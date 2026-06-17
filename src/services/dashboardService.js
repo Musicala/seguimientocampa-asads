@@ -106,6 +106,7 @@ function groupByDate(metrics) {
 function summarize(rows) {
   const total = {
     spend: 0, reported_spend: 0, impressions: 0, reach: 0, clicks: 0, link_clicks: 0, leads: 0, messages: 0, conversions: 0, sales: 0, revenue: 0, video_plays: 0, post_interactions: 0,
+    saves: 0, shares: 0, comments: 0, reactions: 0, page_likes: 0, meta_leads: 0,
     real_new_contacts: 0, real_qualified_leads: 0, real_trial_classes: 0, real_enrollments: 0, real_revenue: 0,
   };
   rows.forEach((r) => addMetrics(total, r));
@@ -120,6 +121,7 @@ function summarize(rows) {
 
 const SUM_KEYS = [
   "spend", "reported_spend", "impressions", "reach", "clicks", "link_clicks", "leads", "messages", "conversions", "sales", "revenue", "video_plays", "post_interactions",
+  "saves", "shares", "comments", "reactions", "page_likes", "meta_leads",
   "real_new_contacts", "real_qualified_leads", "real_trial_classes", "real_enrollments", "real_revenue",
 ];
 

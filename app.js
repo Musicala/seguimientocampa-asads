@@ -16,6 +16,8 @@
     campaigns: [],
     dashboard: null,
     lastMetrics: [],
+    options: null,
+    metricsHistoryFilter: '',
     filters: {
       from: null, // YYYY-MM-DD
       to: null,   // YYYY-MM-DD
@@ -49,6 +51,13 @@
     wireDashboardFilters_();
     wireBudgetQuickEdit_();
     wireDecisionExports_();
+    wireConfig_();
+    wireMetricsHistoryFilter_();
+
+    // Opciones por defecto para que los desplegables no esten vacios antes de conectar.
+    App.options = normalizeOptions_(null);
+    populateOptionSelects_();
+    renderOptionsConfig_();
 
     // Defaults: rango mes actual
     const now = new Date();
@@ -98,6 +107,9 @@
     App.params = res.params || {};
     App.campaigns = res.campaigns || [];
 
+    // Opciones de los desplegables (canal, plataforma, objetivo, etc.)
+    await loadCampaignOptions_();
+
     // Render campañas
     if (window.UI?.renderCampaignTable) UI.renderCampaignTable(App.campaigns);
     else renderCampaignTableFallback_(App.campaigns);
@@ -111,6 +123,7 @@
       fillSelectFallback_($('realityCampaign'), App.campaigns);
     }
     fillBudgetCampaignSelect_();
+    fillMetricsHistoryFilter_();
     updateMetricPlatformUI_();
 
     // Default fecha del formulario
@@ -368,16 +381,16 @@
     setCampaignFormValue_('campaignId', campaign?.campaign_id || '');
     if ($('campaignBudgetMode')) $('campaignBudgetMode').dataset.userTouched = isEdit ? '1' : '';
     setCampaignFormValue_('campaignName', campaign?.nombre || '');
-    setCampaignFormValue_('campaignChannel', campaign?.canal || '');
-    setCampaignFormValue_('campaignPlatform', campaign?.plataforma || '');
-    setCampaignFormValue_('campaignObjective', campaign?.objetivo || '');
-    setCampaignFormValue_('campaignService', campaign?.servicio || '');
-    setCampaignFormValue_('campaignMode', campaign?.modalidad || '');
+    setCampaignSelectValue_('campaignChannel', campaign?.canal || '');
+    setCampaignSelectValue_('campaignPlatform', campaign?.plataforma || '');
+    setCampaignSelectValue_('campaignObjective', campaign?.objetivo || '');
+    setCampaignSelectValue_('campaignService', campaign?.servicio || '');
+    setCampaignSelectValue_('campaignMode', campaign?.modalidad || '');
     setCampaignFormValue_('campaignStart', normalizeDateInput_(campaign?.fecha_inicio) || toISODate(new Date()));
     setCampaignFormValue_('campaignEnd', normalizeDateInput_(campaign?.fecha_fin));
     setCampaignFormValue_('campaignBillingDate', normalizeDateInput_(campaign?.fecha_facturacion));
     setCampaignFormValue_('campaignStatus', campaign?.estado || 'Activa');
-    setCampaignFormValue_('campaignBillingModel', campaign?.modelo_cobro || '');
+    setCampaignSelectValue_('campaignBillingModel', campaign?.modelo_cobro || '');
     setCampaignFormValue_('campaignBudgetMode', campaign?.budget_mode || inferBudgetMode_(campaign));
     setCampaignFormValue_('campaignDailyBudget', campaign?.presupuesto_diario || '');
     setCampaignFormValue_('campaignAdsSpend', campaign?.gasto_ads_total || campaign?.reported_spend || '');
@@ -1007,6 +1020,7 @@
     if (window.UI?.fillCampaignSelect) UI.fillCampaignSelect('realityCampaign', App.campaigns);
     else fillSelectFallback_($('realityCampaign'), App.campaigns);
     fillBudgetCampaignSelect_();
+    fillMetricsHistoryFilter_();
     updateMetricPlatformUI_();
   }
 
@@ -1105,8 +1119,8 @@
       platform_type: platformType,
       spend_entry_type: strForm_('metricSpendEntryType') || 'daily_amount',
       spend,
-      total_charge: parseNum($('metricTotalCharge')?.value),
-      tax_amount: parseNum($('metricTaxAmount')?.value),
+      total_charge: 0,
+      tax_amount: 0,
       daily_budget: parseNum($('metricDailyBudget')?.value),
       duration_days: intForm_('metricDurationDays'),
       conversations_started: conversations,
@@ -1120,9 +1134,11 @@
       viewers: intForm_('metricViewers'),
       link_clicks: linkClicks || googleClicks,
       post_interactions: intForm_('metricPostInteractions'),
-      saves: 0,
-      shares: 0,
-      comments: 0,
+      saves: intForm_('metricSaves'),
+      shares: intForm_('metricShares'),
+      comments: intForm_('metricComments'),
+      page_likes: intForm_('metricPageLikes'),
+      meta_leads: intForm_('metricMetaLeads'),
       reactions: intForm_('metricReactions'),
       optimization_score: parseNum($('metricOptimizationScore')?.value),
       ctr: parseNum($('metricCtr')?.value),
@@ -1186,6 +1202,7 @@
     const numericKeys = [
       'spend','total_charge','tax_amount','daily_budget','duration_days','conversations_started','cost_per_conversation',
       'impressions','clicks','leads','sales','revenue','video_plays','viewers','link_clicks','post_interactions','reactions',
+      'saves','shares','comments','page_likes','meta_leads',
       'optimization_score','ctr','avg_cpc','conversions','interactions','raw_leads','qualified_leads','converted_leads'
     ];
     for (const key of numericKeys) {
@@ -1237,9 +1254,202 @@
     if (!res?.ok) return;
 
     App.lastMetrics = res.rows || [];
+    renderMetricsHistory_();
+  }
 
-    if (window.UI?.renderMetricsTable) UI.renderMetricsTable(App.lastMetrics);
-    else renderMetricsTableFallback_(App.lastMetrics);
+  function renderMetricsHistory_() {
+    const filterId = String(App.metricsHistoryFilter || '');
+    const rows = filterId
+      ? (App.lastMetrics || []).filter(r => String(r.campaign_id || '') === filterId)
+      : (App.lastMetrics || []);
+
+    if (window.UI?.renderMetricsTable) UI.renderMetricsTable(rows);
+    else renderMetricsTableFallback_(rows);
+  }
+
+  // ---------- OPTIONS / CONFIG ----------
+  const FALLBACK_OPTIONS = {
+    canales: ['Meta', 'Google Ads', 'TikTok', 'Otro'],
+    plataformas: ['Business Meta', 'Google Search', 'Google Display', 'Google Performance Max', 'TikTok Ads', 'Otro'],
+    objetivos: ['Mensajes', 'Leads', 'Conversiones', 'Trafico', 'Reconocimiento', 'Interaccion', 'Reproducciones de video'],
+    servicios: ['Talleres vacacionales', 'Clases regulares', 'Cursos', 'Clases particulares', 'Otro'],
+    modalidades: ['Sede', 'Hogar', 'Virtual', 'Hibrida'],
+    modelosCobro: ['Meta cobro total', 'Meta diario', 'Google Ads diario', 'Pago unico', 'Otro'],
+  };
+
+  // Cada campo del formulario de campana ligado a su lista de opciones.
+  const OPTION_FIELDS = [
+    { selectId: 'campaignChannel', key: 'canales', label: 'Canales' },
+    { selectId: 'campaignPlatform', key: 'plataformas', label: 'Plataformas' },
+    { selectId: 'campaignObjective', key: 'objetivos', label: 'Objetivos' },
+    { selectId: 'campaignService', key: 'servicios', label: 'Servicios' },
+    { selectId: 'campaignMode', key: 'modalidades', label: 'Modalidades' },
+    { selectId: 'campaignBillingModel', key: 'modelosCobro', label: 'Modelos de cobro' },
+  ];
+
+  async function loadCampaignOptions_() {
+    let options = null;
+    if (API?.getCampaignOptions) {
+      const res = await safeCall_(() => API.getCampaignOptions());
+      if (res?.ok && res.options) options = res.options;
+    }
+    App.options = normalizeOptions_(options);
+    populateOptionSelects_();
+    renderOptionsConfig_();
+  }
+
+  function normalizeOptions_(options) {
+    const out = {};
+    for (const key of Object.keys(FALLBACK_OPTIONS)) {
+      const list = Array.isArray(options?.[key]) ? options[key] : null;
+      out[key] = (list && list.length ? list : FALLBACK_OPTIONS[key]).map(v => String(v || '').trim()).filter(Boolean);
+    }
+    return out;
+  }
+
+  function populateOptionSelects_() {
+    const opts = App.options || FALLBACK_OPTIONS;
+    OPTION_FIELDS.forEach(({ selectId, key }) => {
+      const sel = $(selectId);
+      if (!sel) return;
+      const current = sel.value;
+      const list = opts[key] || [];
+      sel.innerHTML = '<option value="">Selecciona...</option>';
+      list.forEach(value => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = value;
+        sel.appendChild(opt);
+      });
+      if (current) setCampaignSelectValue_(selectId, current);
+    });
+  }
+
+  // Asigna el valor a un select; si no existe en la lista (datos antiguos), lo agrega.
+  function setCampaignSelectValue_(id, value) {
+    const sel = $(id);
+    if (!sel) return;
+    const v = String(value || '').trim();
+    if (!v) { sel.value = ''; return; }
+    const exists = Array.from(sel.options).some(o => o.value === v);
+    if (!exists) {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      sel.appendChild(opt);
+    }
+    sel.value = v;
+  }
+
+  function fillMetricsHistoryFilter_() {
+    const sel = $('metricsHistoryFilter');
+    if (!sel) return;
+    const current = sel.value || App.metricsHistoryFilter || '';
+    sel.innerHTML = '<option value="">Todas las campañas</option>';
+    (App.campaigns || []).forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.campaign_id || '';
+      opt.textContent = `${c.nombre || c.campaign_id || ''}${c.canal ? ` - ${c.canal}` : ''}`;
+      sel.appendChild(opt);
+    });
+    sel.value = current;
+    App.metricsHistoryFilter = sel.value;
+  }
+
+  function wireMetricsHistoryFilter_() {
+    const sel = $('metricsHistoryFilter');
+    if (!sel) return;
+    sel.addEventListener('change', () => {
+      App.metricsHistoryFilter = sel.value || '';
+      renderMetricsHistory_();
+    });
+  }
+
+  function wireConfig_() {
+    const btn = $('btnSaveOptions');
+    if (btn) btn.addEventListener('click', onSaveOptions_);
+  }
+
+  function renderOptionsConfig_() {
+    const host = $('optionsConfig');
+    if (!host) return;
+    const opts = App.options || FALLBACK_OPTIONS;
+    host.innerHTML = OPTION_FIELDS.map(({ key, label }) => {
+      const list = opts[key] || [];
+      const chips = list.map((value, idx) => `
+        <span class="option-chip">
+          <span>${escapeHtml(value)}</span>
+          <button type="button" class="option-remove" data-key="${escapeHtml(key)}" data-index="${idx}" aria-label="Eliminar">×</button>
+        </span>
+      `).join('');
+      return `
+        <div class="option-group" data-group="${escapeHtml(key)}">
+          <h4>${escapeHtml(label)}</h4>
+          <div class="option-chips">${chips || '<span class="muted">Sin opciones todavia.</span>'}</div>
+          <div class="option-add">
+            <input type="text" class="option-add-input" data-key="${escapeHtml(key)}" placeholder="Agregar opción y Enter" />
+            <button type="button" class="btn-mini option-add-btn" data-key="${escapeHtml(key)}">Agregar</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    host.querySelectorAll('.option-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.key;
+        const index = Number(btn.dataset.index);
+        if (App.options?.[key]) {
+          App.options[key].splice(index, 1);
+          renderOptionsConfig_();
+        }
+      });
+    });
+    host.querySelectorAll('.option-add-btn').forEach(btn => {
+      btn.addEventListener('click', () => addOptionFromInput_(btn.dataset.key));
+    });
+    host.querySelectorAll('.option-add-input').forEach(input => {
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          addOptionFromInput_(input.dataset.key);
+        }
+      });
+    });
+  }
+
+  function addOptionFromInput_(key) {
+    const input = document.querySelector(`.option-add-input[data-key="${key}"]`);
+    if (!input) return;
+    const value = String(input.value || '').trim();
+    if (!value) return;
+    if (!App.options) App.options = normalizeOptions_(null);
+    if (!App.options[key]) App.options[key] = [];
+    const exists = App.options[key].some(v => v.toLowerCase() === value.toLowerCase());
+    if (!exists) App.options[key].push(value);
+    input.value = '';
+    renderOptionsConfig_();
+  }
+
+  async function onSaveOptions_() {
+    const btn = $('btnSaveOptions');
+    if (!API?.saveCampaignOptions) {
+      UIx.toast('No se pudo guardar: API no disponible', 'error');
+      return;
+    }
+    setButtonLoading(btn, true, 'Guardando...');
+    try {
+      const res = await safeCall_(() => API.saveCampaignOptions(App.options || {}));
+      if (!res?.ok) {
+        UIx.toast(res?.error || 'No se pudo guardar la configuración', 'error');
+        return;
+      }
+      App.options = normalizeOptions_(res.options || App.options);
+      populateOptionSelects_();
+      renderOptionsConfig_();
+      UIx.toast('Configuración guardada', 'success');
+    } finally {
+      setButtonLoading(btn, false);
+    }
   }
 
   // ---------- TABS ----------

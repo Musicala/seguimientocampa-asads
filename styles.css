@@ -1321,3 +1321,15 @@ button:not(.primary) {
 .task-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
 .task-status { font-size: 12px; }
 .task-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ===== Configuración: listas de opciones ===== */
+.options-config { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-top: 12px; }
+.option-group { border: 1px solid #e6e8f0; border-radius: 12px; padding: 14px; background: #fbfcff; }
+.option-group h4 { margin: 0 0 10px; font-size: 14px; }
+.option-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.option-chip { display: inline-flex; align-items: center; gap: 6px; background: #eef2ff; color: #1f2a5a; border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 13px; }
+.option-remove { border: none; background: #c8d0f0; color: #2a2f4a; border-radius: 50%; width: 18px; height: 18px; line-height: 1; cursor: pointer; font-size: 14px; padding: 0; }
+.option-remove:hover { background: #ff6b6b; color: #fff; }
+.option-add { display: flex; gap: 8px; }
+.option-add-input { flex: 1; min-width: 0; }
+.metrics-history-filter { display: flex; flex-direction: column; gap: 4px; font-size: 13px; margin-bottom: 12px; max-width: 360px; }

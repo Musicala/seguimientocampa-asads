@@ -2,7 +2,7 @@ import { currentUser, isAuthorizedUser, waitForAuthReady } from "./services/auth
 import { archiveCampaign, deleteCampaign, listCampaigns, reactivateCampaign, saveCampaign, updateCampaignStatus } from "./services/campaignsService.js";
 import { addMetric, listMetrics, saveMetric } from "./services/metricsService.js";
 import { addMusicalaReality, listMusicalaReality, normalizeReality } from "./services/realityService.js";
-import { getGlobalBudget, getMarketingSettings, saveMarketingSettings, setGlobalBudget } from "./services/settingsService.js";
+import { getCampaignOptions, getGlobalBudget, getMarketingSettings, saveCampaignOptions, saveMarketingSettings, setGlobalBudget } from "./services/settingsService.js";
 import { addDecisionLog, listDecisionLog } from "./services/decisionLogService.js";
 import { addMarketingTask, listMarketingTasks, taskFromAction, updateMarketingTask } from "./services/tasksService.js";
 import { buildDashboard } from "./services/dashboardService.js";
@@ -129,6 +129,15 @@ export const API = {
     requireAuth();
     await saveMarketingSettings(payload);
     return { ok: true };
+  },
+  async getCampaignOptions() {
+    requireAuth();
+    return { ok: true, options: await getCampaignOptions() };
+  },
+  async saveCampaignOptions(payload) {
+    requireAuth();
+    const res = await saveCampaignOptions(payload);
+    return { ok: true, options: res.options };
   },
   async setGlobalBudget(amount) {
     requireAuth();

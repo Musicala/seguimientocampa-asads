@@ -5,6 +5,63 @@ import { authUserPayload } from "./authService.js";
 // Documento unico de configuracion global de marketing.
 const SETTINGS_PATH = ["settings", "marketing"];
 
+// Documento con las listas de opciones para los desplegables de campanas.
+const OPTIONS_PATH = ["settings", "options"];
+
+// Opciones iniciales sugeridas para Musicala. Se editan desde la pestana Configuracion.
+export const DEFAULT_OPTIONS = {
+  canales: ["Meta", "Google Ads", "TikTok", "Otro"],
+  plataformas: ["Business Meta", "Google Search", "Google Display", "Google Performance Max", "TikTok Ads", "Otro"],
+  objetivos: ["Mensajes", "Leads", "Conversiones", "Trafico", "Reconocimiento", "Interaccion", "Reproducciones de video"],
+  servicios: ["Talleres vacacionales", "Clases regulares", "Cursos", "Clases particulares", "Otro"],
+  modalidades: ["Sede", "Hogar", "Virtual", "Hibrida"],
+  modelosCobro: ["Meta cobro total", "Meta diario", "Google Ads diario", "Pago unico", "Otro"],
+};
+
+function cleanOptionList(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of value) {
+    const text = String(item || "").trim();
+    if (!text || seen.has(text.toLowerCase())) continue;
+    seen.add(text.toLowerCase());
+    out.push(text);
+  }
+  return out;
+}
+
+export async function getCampaignOptions() {
+  try {
+    const snap = await getDoc(doc(db, ...OPTIONS_PATH));
+    if (snap.exists()) {
+      const data = snap.data() || {};
+      const merged = { ...DEFAULT_OPTIONS };
+      for (const key of Object.keys(DEFAULT_OPTIONS)) {
+        const stored = cleanOptionList(data[key]);
+        if (stored.length) merged[key] = stored;
+      }
+      return merged;
+    }
+  } catch (_) {
+    // Si Firestore falla, devolvemos los valores por defecto.
+  }
+  return { ...DEFAULT_OPTIONS };
+}
+
+export async function saveCampaignOptions(payload = {}) {
+  const clean = {};
+  for (const key of Object.keys(DEFAULT_OPTIONS)) {
+    clean[key] = cleanOptionList(payload[key]);
+  }
+  await setDoc(
+    doc(db, ...OPTIONS_PATH),
+    { ...clean, updatedAt: serverTimestamp(), updatedBy: authUserPayload() },
+    { merge: true }
+  );
+  return { ok: true, options: clean };
+}
+
 // Targets iniciales sugeridos para Musicala. Se pueden editar desde Firestore.
 export const DEFAULT_SETTINGS = {
   globalMonthlyBudget: 0,
