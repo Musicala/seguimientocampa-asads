@@ -364,6 +364,18 @@ main {
   font-size: 19px;
 }
 
+.metric-spend-help {
+  grid-column: 1 / -1;
+  margin: -2px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.metrics-row-actions {
+  white-space: nowrap;
+}
+
 /* =========================================
    TABLES
 ========================================= */

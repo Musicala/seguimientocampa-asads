@@ -139,9 +139,9 @@ function spendForPeriod(metrics, filters = {}) {
 
   if (!latestCumulativeInRange) return dailyTotal;
 
-  const previousCumulative = lastOf(sorted.filter((m) => isBeforeFrom(m, filters) && isCumulativeSpend(m)));
-  const cumulativeDelta = Math.max(0, num(latestCumulativeInRange.spend) - num(previousCumulative?.spend));
-  return dailyTotal + cumulativeDelta;
+  // El acumulado corresponde al periodo seleccionado en la plataforma (normalmente el mes).
+  // El registro mas reciente reemplaza snapshots anteriores del mismo periodo.
+  return dailyTotal + num(latestCumulativeInRange.spend);
 }
 
 function isMetricInRange(metric, filters = {}) {
@@ -150,10 +150,6 @@ function isMetricInRange(metric, filters = {}) {
   if (filters.from && date < filters.from) return false;
   if (filters.to && date > filters.to) return false;
   return true;
-}
-
-function isBeforeFrom(metric, filters = {}) {
-  return Boolean(filters.from) && String(metric.date || "") < filters.from;
 }
 
 function isCumulativeSpend(metric) {

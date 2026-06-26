@@ -16,6 +16,7 @@
     campaigns: [],
     dashboard: null,
     lastMetrics: [],
+    editingMetric: null,
     options: null,
     metricsHistoryFilter: '',
     filters: {
@@ -1092,6 +1093,9 @@
     if (form) form.addEventListener('submit', onSubmitMetric_);
     const select = $('metricCampaign');
     if (select) select.addEventListener('change', updateMetricPlatformUI_);
+    $('metricEditCancelBtn')?.addEventListener('click', cancelMetricEdit_);
+    document.addEventListener('metric:edit', ev => startMetricEdit_(ev.detail));
+    document.addEventListener('metric:archive', ev => archiveMetric_(ev.detail));
   }
 
   async function onSubmitMetric_(ev) {
@@ -1116,13 +1120,17 @@
 
     setButtonLoading(btn, true, 'Guardando...');
     try {
-      const res = await safeCall_(() => API.addMetric(payload));
+      const res = App.editingMetric
+        ? await safeCall_(() => API.updateMetric(payload, App.editingMetric.metric_id))
+        : await safeCall_(() => API.addMetric(payload));
       if (!res?.ok) {
         UIx.toast(res?.error || 'No se pudo guardar m?trica', 'error');
         return;
       }
 
-      UIx.toast('M?trica guardada OK', 'success');
+      UIx.toast(App.editingMetric ? 'Métrica actualizada' : 'Métrica guardada', 'success');
+      App.editingMetric = null;
+      syncMetricEditState_();
       clearMetricFormAfterSave_();
       await refreshRecentMetrics_();
       await refreshDashboard_();
@@ -1150,7 +1158,7 @@
       campaign_id: $('metricCampaign')?.value || '',
       date: $('metricDate')?.value || '',
       platform_type: platformType,
-      spend_entry_type: strForm_('metricSpendEntryType') || 'daily_amount',
+      spend_entry_type: strForm_('metricSpendEntryType') || 'period_snapshot',
       spend,
       total_charge: 0,
       tax_amount: 0,
@@ -1252,6 +1260,63 @@
       if (!keep.has(el.id)) el.value = '';
     });
     updateMetricPlatformUI_();
+  }
+
+  function startMetricEdit_({ campaign_id, metric_id } = {}) {
+    const row = (App.lastMetrics || []).find(item =>
+      String(item.campaign_id || '') === String(campaign_id || '') &&
+      String(item.metric_id || item.id || '') === String(metric_id || '')
+    );
+    if (!row) return UIx.toast('No encontré el registro para editar', 'warning');
+
+    App.editingMetric = { campaign_id, metric_id };
+    const values = {
+      metricCampaign: campaign_id, metricDate: row.date, metricSpendEntryType: row.spend_entry_type || 'period_snapshot',
+      metricDailyBudget: row.daily_budget, metricDurationDays: row.duration_days,
+      metricConversationsStarted: row.conversations_started, metricCostPerConversation: row.cost_per_conversation,
+      metricImpressions: row.impressions, metricClicks: row.clicks, metricLinkClicks: row.link_clicks,
+      metricSales: row.sales, metricRevenue: row.revenue, metricVideoPlays: row.video_plays,
+      metricViewers: row.viewers, metricPostInteractions: row.post_interactions, metricSaves: row.saves,
+      metricShares: row.shares, metricComments: row.comments, metricPageLikes: row.page_likes,
+      metricMetaLeads: row.meta_leads, metricReactions: row.reactions, metricOptimizationScore: row.optimization_score,
+      metricCtr: row.ctr, metricAvgCpc: row.avg_cpc, metricConversions: row.conversions,
+      metricInteractions: row.interactions, metricRawLeads: row.raw_leads,
+      metricQualifiedLeads: row.qualified_leads, metricConvertedLeads: row.converted_leads,
+      metricTopSearches: row.top_searches, metricCostlyKeywords: row.costly_keywords,
+      metricBestKeywords: row.best_keywords, metricQuickObservation: row.quick_observation || row.notes,
+    };
+    Object.entries(values).forEach(([id, value]) => {
+      const el = $(id);
+      if (el) el.value = value ?? '';
+    });
+    updateMetricPlatformUI_();
+    const platform = getCampaignPlatformType_(getSelectedCampaign_());
+    const spendId = platform === 'google' ? 'metricGoogleCost' : platform === 'general' ? 'metricGeneralSpend' : 'metricSpend';
+    if ($(spendId)) $(spendId).value = row.spend ?? '';
+    syncMetricEditState_();
+    $('metricsForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function cancelMetricEdit_() {
+    App.editingMetric = null;
+    syncMetricEditState_();
+    clearMetricFormAfterSave_();
+  }
+
+  function syncMetricEditState_() {
+    const editing = Boolean(App.editingMetric);
+    if ($('metricSaveBtn')) $('metricSaveBtn').textContent = editing ? 'Guardar cambios' : 'Guardar';
+    if ($('metricEditCancelBtn')) $('metricEditCancelBtn').hidden = !editing;
+  }
+
+  async function archiveMetric_({ campaign_id, metric_id } = {}) {
+    if (!campaign_id || !metric_id || !confirm('¿Quitar este registro del cálculo y del histórico?')) return;
+    const res = await safeCall_(() => API.archiveMetric(campaign_id, metric_id));
+    if (!res?.ok) return UIx.toast(res?.error || 'No se pudo quitar el registro', 'error');
+    if (App.editingMetric?.metric_id === metric_id) cancelMetricEdit_();
+    UIx.toast('Registro quitado del cálculo', 'success');
+    await refreshRecentMetrics_();
+    await refreshDashboard_();
   }
 
   function intForm_(id) {

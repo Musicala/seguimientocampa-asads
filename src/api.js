@@ -1,6 +1,6 @@
 import { currentUser, isAuthorizedUser, waitForAuthReady } from "./services/authService.js";
 import { archiveCampaign, deleteCampaign, listCampaigns, reactivateCampaign, saveCampaign, updateCampaignStatus } from "./services/campaignsService.js";
-import { addMetric, listMetrics, saveMetric } from "./services/metricsService.js";
+import { addMetric, archiveMetric, listMetrics, saveMetric } from "./services/metricsService.js";
 import { addMusicalaReality, listMusicalaReality, normalizeReality } from "./services/realityService.js";
 import { getCampaignOptions, getGlobalBudget, getMarketingSettings, saveCampaignOptions, saveMarketingSettings, setGlobalBudget } from "./services/settingsService.js";
 import { addDecisionLog, listDecisionLog } from "./services/decisionLogService.js";
@@ -98,6 +98,16 @@ export const API = {
     requireAuth();
     const id = await addMetric(payload);
     return { ok: true, id };
+  },
+  async updateMetric(payload, metricId) {
+    requireAuth();
+    const id = await saveMetric(payload, metricId);
+    return { ok: true, id };
+  },
+  async archiveMetric(campaignId, metricId) {
+    requireAuth();
+    await archiveMetric(campaignId, metricId);
+    return { ok: true };
   },
   async addMusicalaReality(payload) {
     requireAuth();

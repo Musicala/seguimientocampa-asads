@@ -353,6 +353,7 @@ const UI = (() => {
             <th>Ventas</th>
             <th>Costo por resultado</th>
             <th>Observacion</th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -370,12 +371,27 @@ const UI = (() => {
                 <td>${intFmt_(r.sales)}</td>
                 <td>${result.value > 0 ? moneyCOP_(spend / result.value) : "Sin resultado"}</td>
                 <td>${esc_(r.quick_observation || r.notes || "")}</td>
+                <td class="metrics-row-actions">
+                  <button class="btn-mini" data-action="edit-metric" data-campaign-id="${escAttr_(r.campaign_id || "")}" data-metric-id="${escAttr_(r.metric_id || r.id || "")}">Editar</button>
+                  <button class="btn-mini danger" data-action="archive-metric" data-campaign-id="${escAttr_(r.campaign_id || "")}" data-metric-id="${escAttr_(r.metric_id || r.id || "")}">Quitar</button>
+                </td>
               </tr>
             `;
           }).join("")}
         </tbody>
       </table>
     `;
+
+    el.querySelectorAll('[data-action="edit-metric"]').forEach(btn => {
+      btn.addEventListener("click", () => document.dispatchEvent(new CustomEvent("metric:edit", {
+        detail: { campaign_id: btn.dataset.campaignId, metric_id: btn.dataset.metricId },
+      })));
+    });
+    el.querySelectorAll('[data-action="archive-metric"]').forEach(btn => {
+      btn.addEventListener("click", () => document.dispatchEvent(new CustomEvent("metric:archive", {
+        detail: { campaign_id: btn.dataset.campaignId, metric_id: btn.dataset.metricId },
+      })));
+    });
   }
 
   function alertCard_(item) {

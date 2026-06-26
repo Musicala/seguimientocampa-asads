@@ -35,6 +35,14 @@ export async function saveMetric(payload, metricId) {
   return id;
 }
 
+export async function archiveMetric(campaignId, metricId) {
+  if (!campaignId || !metricId) throw new Error("Falta identificar la metrica");
+  await setDoc(doc(db, "campaigns", String(campaignId), "metrics", String(metricId)), {
+    archived: true,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
 export async function listMetrics(campaigns = [], filters = {}) {
   const all = [];
   const selected = String(filters.campaign_id || filters.campaignId || "");
@@ -48,6 +56,7 @@ export async function listMetrics(campaigns = [], filters = {}) {
     if (filters.to) constraints.unshift(where("date", "<=", filters.to));
     const snap = await getDocs(query(collection(db, "campaigns", campaignId, "metrics"), ...constraints));
     snap.docs.forEach((item) => {
+      if (item.data().archived === true) return;
       all.push({
         id: item.id,
         metric_id: item.id,
