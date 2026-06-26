@@ -172,6 +172,24 @@
       </div>
     </div>
 
+    <div class="campaign-list-toolbar" aria-label="Organizar campañas">
+      <span id="campaignCount" class="campaign-count"></span>
+      <div class="campaign-sort-controls">
+        <label for="campaignSort">Ordenar por</label>
+        <select id="campaignSort">
+          <option value="created">Más recientes</option>
+          <option value="start">Fecha de inicio</option>
+          <option value="end">Fecha de finalización</option>
+          <option value="status">Estado</option>
+          <option value="platform">Canal / plataforma</option>
+          <option value="budget">Presupuesto diario</option>
+          <option value="spend">Cobro real</option>
+          <option value="name">Nombre</option>
+        </select>
+        <button id="campaignSortDirection" class="sort-direction-btn" type="button" title="Invertir orden" aria-label="Invertir orden">↓</button>
+      </div>
+    </div>
+
     <div class="card">
 
       <table class="data-table">
@@ -557,10 +575,10 @@
 
 <script src="./utils.js?v=20260424-2"></script>
 <script src="./state.js?v=20260424-2"></script>
-<script src="./ui.js?v=20260527-7"></script>
+<script src="./ui.js?v=20260626-1"></script>
 <script src="./charts.js?v=20260527-7"></script>
 <script type="module" src="./src/main.js?v=20260616-1"></script>
-<script src="./app.js?v=20260616-1"></script>
+<script src="./app.js?v=20260626-1"></script>
 
 </body>
 </html>

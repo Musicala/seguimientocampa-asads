@@ -143,7 +143,9 @@ const UI = (() => {
     const tb = $("campaignTable");
     if (!tb) return;
 
-    const list = (campaigns || []).slice();
+    const list = sortCampaigns_(campaigns || []);
+    const count = $("campaignCount");
+    if (count) count.textContent = `${list.length} ${list.length === 1 ? "campaña" : "campañas"}`;
 
     if (!list.length) {
       tb.innerHTML = `<tr><td colspan="7" class="muted">Aun no hay campanas.</td></tr>`;
@@ -221,6 +223,37 @@ const UI = (() => {
         const id = btn.getAttribute("data-id") || "";
         document.dispatchEvent(new CustomEvent("campaign:reactivate", { detail: { campaign_id: id } }));
       });
+    });
+  }
+
+  function sortCampaigns_(campaigns) {
+    const field = $("campaignSort")?.value || "created";
+    const direction = $("campaignSortDirection")?.dataset.direction === "asc" ? 1 : -1;
+    const statusOrder = { activa: 1, pausada: 2, finalizada: 3, archivada: 4 };
+    const text = value => String(value || "").trim().toLocaleLowerCase("es");
+    const date = value => {
+      if (!value) return 0;
+      const parsed = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+      return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+    };
+    const valueFor = campaign => {
+      if (field === "name") return text(campaign.nombre || campaign.name);
+      if (field === "platform") return text(campaign.canal || campaign.plataforma || campaign.platform);
+      if (field === "status") return statusOrder[text(campaign.estado || campaign.status)] || 99;
+      if (field === "budget") return num_(campaign.presupuesto_diario || campaign.dailyBudget);
+      if (field === "spend") return num_(campaign.cobro_total || campaign.spend);
+      if (field === "start") return date(campaign.fecha_inicio || campaign.startDate);
+      if (field === "end") return date(campaign.fecha_fin || campaign.endDate);
+      return date(campaign.fecha_creacion || campaign.createdAt || campaign.created_at);
+    };
+
+    return campaigns.slice().sort((a, b) => {
+      const left = valueFor(a);
+      const right = valueFor(b);
+      const comparison = typeof left === "string"
+        ? left.localeCompare(right, "es", { sensitivity: "base" })
+        : left - right;
+      return (comparison || text(a.nombre || a.name).localeCompare(text(b.nombre || b.name), "es")) * direction;
     });
   }
 

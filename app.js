@@ -46,6 +46,7 @@
   async function init() {
     wireTabs_();
     wireCampaigns_();
+    wireCampaignSorting_();
     wireMetrics_();
     wireReality_();
     wireDashboardFilters_();
@@ -76,6 +77,38 @@
 
     App.booted = true;
     if (connected) UIx.toast('Listo', 'success');
+  }
+
+  function wireCampaignSorting_() {
+    const select = $('campaignSort');
+    const direction = $('campaignSortDirection');
+    if (!select || !direction) return;
+
+    select.value = localStorage.getItem('campaignSort') || 'created';
+    direction.dataset.direction = localStorage.getItem('campaignSortDirection') || 'desc';
+
+    const syncDirection = () => {
+      const ascending = direction.dataset.direction === 'asc';
+      direction.textContent = ascending ? '↑' : '↓';
+      direction.setAttribute('aria-label', ascending ? 'Orden ascendente; invertir' : 'Orden descendente; invertir');
+      direction.title = ascending ? 'Orden ascendente' : 'Orden descendente';
+    };
+    const render = () => {
+      if (window.UI?.renderCampaignTable) UI.renderCampaignTable(App.campaigns);
+      else renderCampaignTableFallback_(App.campaigns);
+    };
+
+    select.addEventListener('change', () => {
+      localStorage.setItem('campaignSort', select.value);
+      render();
+    });
+    direction.addEventListener('click', () => {
+      direction.dataset.direction = direction.dataset.direction === 'asc' ? 'desc' : 'asc';
+      localStorage.setItem('campaignSortDirection', direction.dataset.direction);
+      syncDirection();
+      render();
+    });
+    syncDirection();
   }
 
   // ---------- BOOT ----------
