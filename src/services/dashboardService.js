@@ -11,11 +11,12 @@ export function buildDashboard(campaigns = [], metrics = [], realityRows = [], f
     return platformOk && statusOk;
   });
   const ids = new Set(filteredCampaigns.map((c) => c.campaign_id || c.id));
-  const scopedMetrics = metrics.filter((m) => ids.has(m.campaign_id));
+  const scopedMetrics = metrics.filter((m) => ids.has(m.campaign_id) && isMetricInRange(m, filters));
   const scopedReality = realityRows.filter((r) => ids.has(r.sourceCampaignId) || ids.has(r.campaign_id));
 
   const realityByCampaign = groupRealityByCampaign(scopedReality);
-  const rows = groupByCampaign(scopedMetrics, filteredCampaigns, realityByCampaign);
+  const spendByCampaign = buildSpendByCampaign(metrics.filter((m) => ids.has(m.campaign_id)), filters);
+  const rows = groupByCampaign(scopedMetrics, filteredCampaigns, realityByCampaign, spendByCampaign);
   const totals = summarize(rows);
   totals.active_campaigns = filteredCampaigns.filter((c) => normalizeStatus(c.status || c.estado) === "activa").length;
   totals.global_max_budget = globalBudget || 0;
@@ -72,7 +73,7 @@ function groupRealityByCampaign(realityRows) {
   return map;
 }
 
-function groupByCampaign(metrics, campaigns, realityByCampaign) {
+function groupByCampaign(metrics, campaigns, realityByCampaign, spendByCampaign = new Map()) {
   const byId = new Map(campaigns.map((c) => [c.campaign_id || c.id, {
     ...c,
     spend: 0, impressions: 0, reach: 0, clicks: 0, link_clicks: 0, leads: 0, messages: 0, conversions: 0, sales: 0, revenue: 0, video_plays: 0, post_interactions: 0,
@@ -83,6 +84,10 @@ function groupByCampaign(metrics, campaigns, realityByCampaign) {
     if (!row) return;
     addMetrics(row, m);
   });
+  for (const [id, spend] of spendByCampaign.entries()) {
+    const row = byId.get(id);
+    if (row) row.spend = spend;
+  }
   for (const [id, reality] of realityByCampaign.entries()) {
     const row = byId.get(id);
     if (!row) continue;
@@ -101,6 +106,68 @@ function groupByDate(metrics) {
     byDate.set(date, derive(row));
   });
   return Array.from(byDate.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+function buildSpendByCampaign(metrics, filters = {}) {
+  const byId = new Map();
+  metrics.forEach((m) => {
+    const id = m.campaign_id;
+    if (!id) return;
+    const rows = byId.get(id) || [];
+    rows.push(m);
+    byId.set(id, rows);
+  });
+
+  const out = new Map();
+  for (const [id, rows] of byId.entries()) {
+    out.set(id, spendForPeriod(rows, filters));
+  }
+  return out;
+}
+
+function spendForPeriod(metrics, filters = {}) {
+  const sorted = metrics
+    .filter((m) => m.date)
+    .slice()
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+
+  const latestCumulativeInRange = lastOf(sorted.filter((m) => isMetricInRange(m, filters) && isCumulativeSpend(m)));
+  const dailyAfterLatestCumulative = latestCumulativeInRange
+    ? sorted.filter((m) => isMetricInRange(m, filters) && spendEntryType(m) === "daily_amount" && String(m.date || "") > String(latestCumulativeInRange.date || ""))
+    : sorted.filter((m) => isMetricInRange(m, filters) && spendEntryType(m) === "daily_amount");
+  const dailyTotal = dailyAfterLatestCumulative.reduce((acc, m) => acc + num(m.spend), 0);
+
+  if (!latestCumulativeInRange) return dailyTotal;
+
+  const previousCumulative = lastOf(sorted.filter((m) => isBeforeFrom(m, filters) && isCumulativeSpend(m)));
+  const cumulativeDelta = Math.max(0, num(latestCumulativeInRange.spend) - num(previousCumulative?.spend));
+  return dailyTotal + cumulativeDelta;
+}
+
+function isMetricInRange(metric, filters = {}) {
+  const date = String(metric.date || "");
+  if (!date) return false;
+  if (filters.from && date < filters.from) return false;
+  if (filters.to && date > filters.to) return false;
+  return true;
+}
+
+function isBeforeFrom(metric, filters = {}) {
+  return Boolean(filters.from) && String(metric.date || "") < filters.from;
+}
+
+function isCumulativeSpend(metric) {
+  const type = spendEntryType(metric);
+  return type === "period_snapshot" || type === "final_total";
+}
+
+function spendEntryType(metric) {
+  const type = String(metric?.spend_entry_type || "").trim();
+  return type === "period_snapshot" || type === "final_total" ? type : "daily_amount";
+}
+
+function lastOf(items) {
+  return items.length ? items[items.length - 1] : null;
 }
 
 function summarize(rows) {

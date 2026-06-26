@@ -112,7 +112,7 @@ export const API = {
   async dashboard(filters = {}) {
     requireAuth();
     const campaigns = await listCampaigns();
-    const metrics = await listMetrics(campaigns, filters);
+    const metrics = await listMetrics(campaigns);
     const reality = await listMusicalaReality(filters);
     const settings = await getMarketingSettings();
     return buildDashboard(campaigns, metrics, reality, filters, settings);
