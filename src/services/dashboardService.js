@@ -15,7 +15,7 @@ export function buildDashboard(campaigns = [], metrics = [], realityRows = [], f
   const scopedReality = realityRows.filter((r) => ids.has(r.sourceCampaignId) || ids.has(r.campaign_id));
 
   const realityByCampaign = groupRealityByCampaign(scopedReality);
-  const spendByCampaign = buildSpendByCampaign(metrics.filter((m) => ids.has(m.campaign_id)), filters);
+  const spendByCampaign = buildSpendByCampaign(metrics.filter((m) => ids.has(m.campaign_id)), filters, filteredCampaigns);
   const rows = groupByCampaign(scopedMetrics, filteredCampaigns, realityByCampaign, spendByCampaign);
   const totals = summarize(rows);
   totals.active_campaigns = filteredCampaigns.filter((c) => normalizeStatus(c.status || c.estado) === "activa").length;
@@ -108,7 +108,7 @@ function groupByDate(metrics) {
   return Array.from(byDate.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
 }
 
-function buildSpendByCampaign(metrics, filters = {}) {
+function buildSpendByCampaign(metrics, filters = {}, campaigns = []) {
   const byId = new Map();
   metrics.forEach((m) => {
     const id = m.campaign_id;
@@ -120,21 +120,22 @@ function buildSpendByCampaign(metrics, filters = {}) {
 
   const out = new Map();
   for (const [id, rows] of byId.entries()) {
-    out.set(id, spendForPeriod(rows, filters));
+    const campaign = campaigns.find((item) => String(item.campaign_id || item.id) === String(id));
+    out.set(id, spendForPeriod(rows, filters, campaign));
   }
   return out;
 }
 
-function spendForPeriod(metrics, filters = {}) {
+function spendForPeriod(metrics, filters = {}, campaign = {}) {
   const sorted = metrics
     .filter((m) => m.date)
     .slice()
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
 
-  const latestCumulativeInRange = lastOf(sorted.filter((m) => isMetricInRange(m, filters) && isCumulativeSpend(m)));
+  const latestCumulativeInRange = lastOf(sorted.filter((m) => isSpendInRange(m, filters, campaign) && isCumulativeSpend(m)));
   const dailyAfterLatestCumulative = latestCumulativeInRange
-    ? sorted.filter((m) => isMetricInRange(m, filters) && spendEntryType(m) === "daily_amount" && String(m.date || "") > String(latestCumulativeInRange.date || ""))
-    : sorted.filter((m) => isMetricInRange(m, filters) && spendEntryType(m) === "daily_amount");
+    ? sorted.filter((m) => isSpendInRange(m, filters, campaign) && spendEntryType(m) === "daily_amount" && String(m.date || "") > String(latestCumulativeInRange.date || ""))
+    : sorted.filter((m) => isSpendInRange(m, filters, campaign) && spendEntryType(m) === "daily_amount");
   const dailyTotal = dailyAfterLatestCumulative.reduce((acc, m) => acc + num(m.spend), 0);
 
   if (!latestCumulativeInRange) return dailyTotal;
@@ -142,6 +143,31 @@ function spendForPeriod(metrics, filters = {}) {
   // El acumulado corresponde al periodo seleccionado en la plataforma (normalmente el mes).
   // El registro mas reciente reemplaza snapshots anteriores del mismo periodo.
   return dailyTotal + num(latestCumulativeInRange.spend);
+}
+
+function isSpendInRange(metric, filters = {}, campaign = {}) {
+  const period = spendBudgetPeriod(metric, campaign);
+  if (!period) return isMetricInRange(metric, filters);
+  const fromPeriod = String(filters.from || "").slice(0, 7);
+  const toPeriod = String(filters.to || "").slice(0, 7);
+  if (fromPeriod && period < fromPeriod) return false;
+  if (toPeriod && period > toPeriod) return false;
+  return true;
+}
+
+function spendBudgetPeriod(metric, campaign = {}) {
+  const explicit = String(metric?.budget_period || "").slice(0, 7);
+  if (explicit) return explicit;
+
+  const startMonth = String(campaign.fecha_inicio || campaign.startDate || "").slice(0, 7);
+  const endMonth = String(campaign.fecha_fin || campaign.endDate || "").slice(0, 7);
+  const metricDate = String(metric?.date || "");
+  const endDate = String(campaign.fecha_fin || campaign.endDate || "");
+  const namedForStartMonth = /(?:^|\s|-)mayo(?:\s|$|-)/i.test(String(campaign.nombre || campaign.name || ""));
+  if (startMonth && endDate && metricDate >= endDate && (startMonth === endMonth || namedForStartMonth)) {
+    return startMonth;
+  }
+  return metricDate.slice(0, 7);
 }
 
 function isMetricInRange(metric, filters = {}) {

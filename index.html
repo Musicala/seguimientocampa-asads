@@ -243,6 +243,7 @@
             <h4>Datos basicos</h4>
             <div class="metric-fields">
               <label data-platforms="all">Fecha del registro<input type="date" id="metricDate" required /></label>
+              <label data-platforms="all">Mes del presupuesto<input type="month" id="metricBudgetPeriod" required /></label>
               <label data-platforms="all">Tipo de registro de gasto
                 <select id="metricSpendEntryType">
                   <option value="period_snapshot">Acumulado del mes (recomendado)</option>
@@ -250,7 +251,7 @@
                   <option value="final_total">Total final de la campaña</option>
                 </select>
               </label>
-              <p class="metric-spend-help" data-platforms="all">Filtra la plataforma del día 1 hasta hoy y copia el costo total. Al actualizarlo después, el nuevo acumulado reemplaza al anterior.</p>
+              <p class="metric-spend-help" data-platforms="all">El mes del presupuesto define dónde se descuenta el gasto, aunque registres el dato después. Filtra la plataforma del día 1 hasta hoy y copia el costo total.</p>
               <label data-platforms="meta">Gasto (lo que gastaste)<input type="number" id="metricSpend" min="0" step="any" inputmode="decimal" /></label>
               <label data-platforms="google">Costo<input type="number" id="metricGoogleCost" min="0" step="any" inputmode="decimal" /></label>
               <label data-platforms="general">Gasto<input type="number" id="metricGeneralSpend" min="0" step="any" inputmode="decimal" /></label>
@@ -577,10 +578,10 @@
 
 <script src="./utils.js?v=20260424-2"></script>
 <script src="./state.js?v=20260424-2"></script>
-<script src="./ui.js?v=20260626-1"></script>
+<script src="./ui.js?v=20260626-3"></script>
 <script src="./charts.js?v=20260527-7"></script>
-<script type="module" src="./src/main.js?v=20260626-2"></script>
-<script src="./app.js?v=20260626-2"></script>
+<script type="module" src="./src/main.js?v=20260626-3"></script>
+<script src="./app.js?v=20260626-3"></script>
 
 </body>
 </html>

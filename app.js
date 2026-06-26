@@ -163,6 +163,7 @@
     // Default fecha del formulario
     const dateEl = $('metricDate');
     if (dateEl && !dateEl.value) dateEl.value = toISODate(new Date());
+    setDefaultMetricBudgetPeriod_();
 
     // KPIs header: vacio hasta dashboard
     if (window.UI?.renderGlobalKPIs) UI.renderGlobalKPIs(null);
@@ -1092,7 +1093,10 @@
     const form = $('metricsForm');
     if (form) form.addEventListener('submit', onSubmitMetric_);
     const select = $('metricCampaign');
-    if (select) select.addEventListener('change', updateMetricPlatformUI_);
+    if (select) select.addEventListener('change', () => {
+      updateMetricPlatformUI_();
+      setDefaultMetricBudgetPeriod_();
+    });
     $('metricEditCancelBtn')?.addEventListener('click', cancelMetricEdit_);
     document.addEventListener('metric:edit', ev => startMetricEdit_(ev.detail));
     document.addEventListener('metric:archive', ev => archiveMetric_(ev.detail));
@@ -1157,6 +1161,7 @@
     return {
       campaign_id: $('metricCampaign')?.value || '',
       date: $('metricDate')?.value || '',
+      budget_period: $('metricBudgetPeriod')?.value || String($('metricDate')?.value || '').slice(0, 7),
       platform_type: platformType,
       spend_entry_type: strForm_('metricSpendEntryType') || 'period_snapshot',
       spend,
@@ -1255,11 +1260,17 @@
   }
 
   function clearMetricFormAfterSave_() {
-    const keep = new Set(['metricCampaign', 'metricDate']);
+    const keep = new Set(['metricCampaign', 'metricDate', 'metricBudgetPeriod']);
     $('metricsForm')?.querySelectorAll('input, textarea').forEach(el => {
       if (!keep.has(el.id)) el.value = '';
     });
     updateMetricPlatformUI_();
+  }
+
+  function setDefaultMetricBudgetPeriod_() {
+    const period = $('metricBudgetPeriod');
+    if (!period || period.value) return;
+    period.value = String($('metricDate')?.value || toISODate(new Date())).slice(0, 7);
   }
 
   function startMetricEdit_({ campaign_id, metric_id } = {}) {
@@ -1271,7 +1282,9 @@
 
     App.editingMetric = { campaign_id, metric_id };
     const values = {
-      metricCampaign: campaign_id, metricDate: row.date, metricSpendEntryType: row.spend_entry_type || 'period_snapshot',
+      metricCampaign: campaign_id, metricDate: row.date,
+      metricBudgetPeriod: row.budget_period || inferMetricBudgetPeriod_(row, getCampaignById_(campaign_id)),
+      metricSpendEntryType: row.spend_entry_type || 'period_snapshot',
       metricDailyBudget: row.daily_budget, metricDurationDays: row.duration_days,
       metricConversationsStarted: row.conversations_started, metricCostPerConversation: row.cost_per_conversation,
       metricImpressions: row.impressions, metricClicks: row.clicks, metricLinkClicks: row.link_clicks,
@@ -1295,6 +1308,14 @@
     if ($(spendId)) $(spendId).value = row.spend ?? '';
     syncMetricEditState_();
     $('metricsForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function inferMetricBudgetPeriod_(metric, campaign) {
+    const startMonth = String(campaign?.fecha_inicio || campaign?.startDate || '').slice(0, 7);
+    const endMonth = String(campaign?.fecha_fin || campaign?.endDate || '').slice(0, 7);
+    const namedMonth = /(?:^|\s|-)mayo(?:\s|$|-)/i.test(String(campaign?.nombre || campaign?.name || ''));
+    if (startMonth && (startMonth === endMonth || namedMonth)) return startMonth;
+    return String(metric?.date || '').slice(0, 7);
   }
 
   function cancelMetricEdit_() {

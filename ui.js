@@ -345,6 +345,7 @@ const UI = (() => {
         <thead>
           <tr>
             <th>Fecha</th>
+            <th>Mes presupuesto</th>
             <th>Campana</th>
             <th>Plataforma</th>
             <th>Gasto / costo</th>
@@ -363,6 +364,7 @@ const UI = (() => {
             return `
               <tr>
                 <td>${esc_(dateFmt_(r.date))}</td>
+                <td>${esc_(r.budget_period || String(r.date || "").slice(0, 7))}</td>
                 <td>${esc_(r.nombre || r.campaign_name || r.campaign_id || "")}</td>
                 <td>${platformChip_(platformType_(r))}</td>
                 <td>${moneyCOP_(spend)}</td>
