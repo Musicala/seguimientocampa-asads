@@ -13,8 +13,33 @@ export const DEFAULT_OPTIONS = {
   canales: ["Meta", "Google Ads", "TikTok", "Otro"],
   plataformas: ["Business Meta", "Google Search", "Google Display", "Google Performance Max", "TikTok Ads", "Otro"],
   objetivos: ["Mensajes", "Leads", "Conversiones", "Trafico", "Reconocimiento", "Interaccion", "Reproducciones de video"],
-  servicios: ["Talleres vacacionales", "Clases regulares", "Cursos", "Clases particulares", "Otro"],
-  modalidades: ["Sede", "Hogar", "Virtual", "Hibrida"],
+  servicios: [
+    "Multiservicio / marca general",
+    "Musica general",
+    "Piano",
+    "Canto",
+    "Bateria",
+    "Cuerdas frotadas",
+    "Musicalitos / exploracion musical",
+    "Artes plasticas",
+    "Danza",
+    "Teatro",
+    "Vacacionales",
+    "Talleres especiales",
+    "Otro",
+  ],
+  tiposOferta: ["Personalizada", "Grupal", "Taller", "Vacacional", "Evento", "Mixta"],
+  modalidades: ["Sede", "Hogar", "Virtual", "Hibrida", "No aplica"],
+  enfoques: ["General", "Servicio especifico", "Taller / temporada", "Remarketing", "Reactivacion", "Test"],
+  kpisPrincipales: [
+    "Costo por lead",
+    "Costo por contacto real",
+    "Costo por lead calificado",
+    "Costo por clase de prueba",
+    "Costo por matricula",
+    "ROAS real",
+    "Ingreso real",
+  ],
   modelosCobro: ["Meta cobro total", "Meta diario", "Google Ads diario", "Pago unico", "Otro"],
 };
 
@@ -71,6 +96,30 @@ export const DEFAULT_SETTINGS = {
   minimumLeadsToDecide: 15,
   minimumSpendToPause: 30000,
 };
+
+// Distribucion sugerida por defecto del presupuesto mensual (editable, es solo guia).
+export const DEFAULT_BUDGET_DISTRIBUTION = [
+  { label: "Meta general Musicala", amount: 900000 },
+  { label: "Google busqueda especifica o controlada", amount: 750000 },
+  { label: "Meta talleres / temporada", amount: 600000 },
+  { label: "Remarketing / rescate", amount: 300000 },
+  { label: "Bolsa de prueba", amount: 300000 },
+  { label: "Reserva de optimizacion", amount: 150000 },
+];
+
+export async function setBudgetDistribution(list) {
+  const clean = Array.isArray(list)
+    ? list
+        .map((item) => ({ label: String(item?.label || "").trim(), amount: Number(item?.amount) || 0 }))
+        .filter((item) => item.label)
+    : [];
+  await setDoc(
+    doc(db, ...SETTINGS_PATH),
+    { budgetDistribution: clean, updatedAt: serverTimestamp(), updatedBy: authUserPayload() },
+    { merge: true }
+  );
+  return clean;
+}
 
 // Clave legacy en localStorage usada solo como fallback de migracion.
 const LEGACY_BUDGET_KEY = "musicalaGlobalBudget";

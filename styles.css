@@ -426,6 +426,170 @@ label {
   line-height: 1.3;
 }
 
+.interpretation-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.interpretation-list li {
+  margin-bottom: 4px;
+}
+
+.lead-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+
+.lead-filters label {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: var(--muted);
+  gap: 3px;
+}
+
+.lead-summary {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.lead-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--chip-bg, #eef1f6);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.funnel-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.funnel-row {
+  display: grid;
+  grid-template-columns: 150px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.funnel-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.funnel-bar-wrap {
+  background: var(--chip-bg, #eef1f6);
+  border-radius: 6px;
+  overflow: hidden;
+  height: 22px;
+}
+
+.funnel-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  border-radius: 6px;
+  transition: width .3s ease;
+}
+
+.funnel-value {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.funnel-rate {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+.risk-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.dist-label,
+.dist-amount {
+  width: 100%;
+  padding: 4px 6px;
+  box-sizing: border-box;
+}
+
+.demand-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.demand-row {
+  display: grid;
+  grid-template-columns: 130px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.demand-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.demand-bar-wrap {
+  background: var(--chip-bg, #eef1f6);
+  border-radius: 5px;
+  height: 14px;
+  overflow: hidden;
+}
+
+.demand-bar {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  border-radius: 5px;
+}
+
+.demand-count {
+  font-weight: 600;
+}
+
+.action-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+}
+
+.action-list li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border, #eee);
+  line-height: 1.4;
+}
+
+.action-list li.action-overdue strong {
+  color: #dc2626;
+}
+
 .form-section {
   display: grid;
   gap: 12px;
@@ -1397,3 +1561,54 @@ button:not(.primary) {
 .option-add { display: flex; gap: 8px; }
 .option-add-input { flex: 1; min-width: 0; }
 .metrics-history-filter { display: flex; flex-direction: column; gap: 4px; font-size: 13px; margin-bottom: 12px; max-width: 360px; }
+
+/* ===== Calendario de publicaciones ===== */
+.calendar-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.calendar-toolbar h3 { margin: 0; min-width: 170px; text-align: center; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.calendar-dow { font-size: 12px; font-weight: 800; text-align: center; padding: 6px 0; color: #5a6480; text-transform: uppercase; }
+.calendar-cell { min-height: 84px; border: 1px solid #e6e8f0; border-radius: 8px; padding: 4px; background: #fbfcff; cursor: pointer; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+.calendar-cell:hover { border-color: #4f8cff; }
+.calendar-cell-empty { background: transparent; border-color: transparent; cursor: default; }
+.calendar-cell-today { border-color: #4f8cff; box-shadow: inset 0 0 0 1px #4f8cff; background: #eef4ff; }
+.calendar-daynum { font-size: 12px; font-weight: 700; color: #5a6480; }
+button.calendar-chip { display: block; width: 100%; margin: 0; border: none; text-align: left; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 6px; color: #fff; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+button.calendar-chip:hover { opacity: 0.85; }
+.calendar-dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
+button.cal-vacacionales, .calendar-dot.cal-vacacionales { background: #e67e22; }
+button.cal-preu, .calendar-dot.cal-preu { background: #8e44ad; }
+button.cal-regular, .calendar-dot.cal-regular { background: #2e86de; }
+button.cal-publicacion, .calendar-dot.cal-publicacion { background: #27ae60; }
+button.cal-otro, .calendar-dot.cal-otro { background: #7f8c8d; }
+.calendar-upcoming-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; margin-bottom: 6px; background: rgba(127,127,127,0.06); }
+.calendar-upcoming-info { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 13px; min-width: 0; }
+.calendar-upcoming-row .badge { background: #5a6480; }
+.budget-planner-head { display: grid; grid-template-columns: minmax(240px,.8fr) minmax(420px,1.4fr); gap: 24px; align-items: end; margin: 18px 0; }
+.budget-total-input, .budget-money-input, .budget-percent-input { display: flex; align-items: center; gap: 7px; }
+.budget-total-input { margin-top: 7px; padding: 0 14px; border: 1px solid #dbe2ea; border-radius: 12px; background: #fff; }
+.budget-total-input span { color: #64748b; font-weight: 700; }
+.budget-total-input input { width: 100%; border: 0; box-shadow: none; font-size: 1.25rem; font-weight: 800; }
+.budget-planner-kpis { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+.budget-planner-kpis > div { padding: 12px 14px; border-radius: 12px; background: #f8fafc; border: 1px solid #e2e8f0; }
+.budget-planner-kpis span, .budget-planner-kpis strong { display: block; }
+.budget-planner-kpis span { color: #64748b; font-size: .78rem; margin-bottom: 4px; }
+.budget-planner-kpis .is-over { background: #fff1f2; border-color: #fecdd3; }
+.budget-planner-kpis .is-pending { background: #fffbeb; border-color: #fde68a; }
+.budget-planner-kpis .is-complete { background: #ecfdf5; border-color: #a7f3d0; }
+.budget-allocation-track { display: flex; width: 100%; height: 24px; overflow: hidden; border-radius: 999px; background: #e2e8f0; box-shadow: inset 0 1px 2px rgba(15,23,42,.1); }
+.budget-allocation-segment { min-width: 0; transition: width .25s ease; }
+.budget-allocation-status { margin: 10px 0 18px; font-size: .88rem; font-weight: 700; }
+.budget-allocation-status.is-over { color: #be123c; }
+.budget-allocation-status.is-pending { color: #a16207; }
+.budget-allocation-status.is-complete { color: #047857; }
+.budget-distribution-table td:first-child { min-width: 240px; }
+.budget-allocation-dot { display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; }
+.budget-distribution-table .dist-label { width: calc(100% - 24px); }
+.budget-percent-input input { width: 82px; }
+.budget-money-input input { width: 150px; }
+@media (max-width: 640px) {
+  .calendar-cell { min-height: 56px; }
+  button.calendar-chip { font-size: 9px; padding: 1px 4px; }
+  .budget-planner-head { grid-template-columns: 1fr; }
+  .budget-planner-kpis { grid-template-columns: 1fr; }
+}

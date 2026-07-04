@@ -173,6 +173,7 @@ const UI = (() => {
         <td style="text-align:right">
           <button class="btn-mini" data-action="edit-budget" data-id="${escAttr_(c.campaign_id || "")}">Presupuesto</button>
           <button class="btn-mini" data-action="edit-campaign" data-id="${escAttr_(c.campaign_id || "")}">Editar</button>
+          <button class="btn-mini" data-action="continue-campaign" data-id="${escAttr_(c.campaign_id || "")}">Continuar</button>
           ${String(c.estado || "").toLowerCase().includes("fin") ? `<button class="btn-mini" data-action="reactivate-campaign" data-id="${escAttr_(c.campaign_id || "")}">Reactivar</button>` : ""}
           <button class="btn-mini" data-action="pause-campaign" data-id="${escAttr_(c.campaign_id || "")}">Pausar</button>
           <button class="btn-mini danger" data-action="delete-campaign" data-id="${escAttr_(c.campaign_id || "")}">Eliminar</button>
@@ -222,6 +223,13 @@ const UI = (() => {
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-id") || "";
         document.dispatchEvent(new CustomEvent("campaign:reactivate", { detail: { campaign_id: id } }));
+      });
+    });
+
+    tb.querySelectorAll('button[data-action="continue-campaign"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-id") || "";
+        document.dispatchEvent(new CustomEvent("campaign:continue", { detail: { campaign_id: id } }));
       });
     });
   }

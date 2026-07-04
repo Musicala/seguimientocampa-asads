@@ -2,10 +2,12 @@ import { currentUser, isAuthorizedUser, waitForAuthReady } from "./services/auth
 import { archiveCampaign, deleteCampaign, listCampaigns, reactivateCampaign, saveCampaign, updateCampaignStatus } from "./services/campaignsService.js";
 import { addMetric, archiveMetric, listMetrics, saveMetric } from "./services/metricsService.js";
 import { addMusicalaReality, listMusicalaReality, normalizeReality } from "./services/realityService.js";
-import { getCampaignOptions, getGlobalBudget, getMarketingSettings, saveCampaignOptions, saveMarketingSettings, setGlobalBudget } from "./services/settingsService.js";
+import { addLead, listLeads, updateLead } from "./services/leadsService.js";
+import { getCampaignOptions, getGlobalBudget, getMarketingSettings, saveCampaignOptions, saveMarketingSettings, setBudgetDistribution, setGlobalBudget } from "./services/settingsService.js";
 import { addDecisionLog, listDecisionLog } from "./services/decisionLogService.js";
 import { addMarketingTask, listMarketingTasks, taskFromAction, updateMarketingTask } from "./services/tasksService.js";
 import { buildDashboard } from "./services/dashboardService.js";
+import { addCalendarEvent, archiveCalendarEvent, listCalendarEvents, seedDefaultSeasons, updateCalendarEvent } from "./services/calendarService.js";
 
 function requireAuth() {
   if (!currentUser()) throw new Error("Inicia sesion con Google para leer y guardar en Firebase.");
@@ -59,11 +61,12 @@ export const API = {
     await safeLog(id, { type: "archive", label: "Campana archivada", reason: "Archivado logico desde la app." });
     return { ok: true, archived: true };
   },
-  async reactivateCampaign(id) {
+  async reactivateCampaign(id, options = {}) {
     requireAuth();
-    const newId = await reactivateCampaign(id);
-    await safeLog(id, { type: "reactivate", label: "Campana reactivada", reason: `Se creo la version nueva ${newId}.`, nextAction: "Vigilar costo por matricula y calidad de contactos." });
-    await safeLog(newId, { type: "reactivate", label: "Reactivacion", reason: `Reactivada desde ${id}.` });
+    const newId = await reactivateCampaign(id, options);
+    const hypo = options.hypothesis ? ` Hipotesis: ${options.hypothesis}.` : "";
+    await safeLog(id, { type: "reactivate", label: "Campana reactivada", reason: `Se creo la version nueva ${newId} (${options.mode || "igual"}).${hypo}`, nextAction: "Vigilar costo por matricula y calidad de contactos." });
+    await safeLog(newId, { type: "reactivate", label: "Reactivacion", reason: `Reactivada desde ${id} (${options.mode || "igual"}).${hypo}` });
     return { ok: true, id: newId, campaign_id: newId };
   },
   async addDecisionLog(campaignId, payload) {
@@ -94,6 +97,30 @@ export const API = {
     requireAuth();
     return { ok: true, rows: await listMarketingTasks(filters) };
   },
+  async listCalendarEvents(filters = {}) {
+    requireAuth();
+    return { ok: true, rows: await listCalendarEvents(filters) };
+  },
+  async addCalendarEvent(payload) {
+    requireAuth();
+    const id = await addCalendarEvent(payload);
+    return { ok: true, id };
+  },
+  async updateCalendarEvent(id, patch) {
+    requireAuth();
+    await updateCalendarEvent(id, patch);
+    return { ok: true };
+  },
+  async archiveCalendarEvent(id) {
+    requireAuth();
+    await archiveCalendarEvent(id);
+    return { ok: true };
+  },
+  async seedCalendarDefaults(year) {
+    requireAuth();
+    const created = await seedDefaultSeasons(year);
+    return { ok: true, created };
+  },
   async addMetric(payload) {
     requireAuth();
     const id = await addMetric(payload);
@@ -113,6 +140,20 @@ export const API = {
     requireAuth();
     const id = await addMusicalaReality(payload);
     return { ok: true, id };
+  },
+  async addLead(payload) {
+    requireAuth();
+    const id = await addLead(payload);
+    return { ok: true, id };
+  },
+  async updateLead(id, patch) {
+    requireAuth();
+    await updateLead(id, patch);
+    return { ok: true };
+  },
+  async listLeads(filters = {}) {
+    requireAuth();
+    return { ok: true, rows: await listLeads(filters) };
   },
   async queryMetrics(filters = {}) {
     requireAuth();
@@ -157,6 +198,11 @@ export const API = {
   async getGlobalBudget() {
     const amount = await getGlobalBudget();
     return { ok: true, amount };
+  },
+  async saveBudgetDistribution(list) {
+    requireAuth();
+    const saved = await setBudgetDistribution(list);
+    return { ok: true, distribution: saved };
   },
   async ping() {
     requireAuth();

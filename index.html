@@ -6,7 +6,7 @@
 
 <title>Seguimiento Marketing · Musicala</title>
 
-<link rel="stylesheet" href="./styles.css?v=20260616-1" />
+<link rel="stylesheet" href="./styles.css?v=20260704-2" />
 
 </head>
 
@@ -44,6 +44,26 @@
 
   <button class="tab" data-view="metrics">
     Métricas
+  </button>
+
+  <button class="tab" data-view="leads">
+    Leads
+  </button>
+
+  <button class="tab" data-view="services">
+    Servicios
+  </button>
+
+  <button class="tab" data-view="funnel">
+    Embudo
+  </button>
+
+  <button class="tab" data-view="budget">
+    Presupuesto
+  </button>
+
+  <button class="tab" data-view="calendar">
+    Calendario
   </button>
 
   <button class="tab" data-view="config">
@@ -149,6 +169,42 @@
       <div class="card dashboard-wide">
         <h3>Campañas ganadoras</h3>
         <div id="winnerCampaigns"></div>
+      </div>
+
+      <div class="card dashboard-wide">
+        <h3>Ideas de campaña (sugerencias)</h3>
+        <div id="strategicIdeas"></div>
+      </div>
+
+      <div class="card">
+        <h3>Servicios más consultados</h3>
+        <div id="demandByService"></div>
+      </div>
+
+      <div class="card">
+        <h3>Tipo de oferta más consultado</h3>
+        <div id="demandByOffer"></div>
+      </div>
+
+      <div class="card">
+        <h3>Datos incompletos</h3>
+        <div id="incompleteData"></div>
+      </div>
+
+      <div class="card">
+        <h3>Próximas acciones (leads)</h3>
+        <div id="upcomingLeadActions"></div>
+      </div>
+
+      <div class="card dashboard-wide interpretation-card">
+        <h3>Cómo interpretar estos datos</h3>
+        <ul class="interpretation-list">
+          <li>Un lead no equivale a una matrícula.</li>
+          <li>Las campañas generales pueden funcionar, pero cada lead debe clasificarse por servicio.</li>
+          <li>Google debe evaluarse por intención y calidad, no solo por CPL.</li>
+          <li>Meta puede funcionar mejor para descubrimiento, talleres, temporada y marca.</li>
+          <li>No escalar campañas sin realidad comercial registrada.</li>
+        </ul>
       </div>
 
     </div>
@@ -355,6 +411,211 @@
   </section>
 
 
+  <!-- LEADS -->
+  <section id="view-leads" class="view">
+
+    <div class="page-header">
+      <h2>Seguimiento de leads</h2>
+    </div>
+
+    <div class="metrics-grid">
+
+      <div class="card">
+        <h3>Registrar lead / contacto</h3>
+        <p class="form-help">
+          Registra cada contacto para saber qué campaña lo trajo, qué servicio quería y en qué punto del embudo está. Llena lo que tengas; puedes completar el resto después.
+        </p>
+
+        <form id="leadForm">
+          <div class="form-grid">
+            <label>Fecha<input type="date" id="leadDate" required /></label>
+            <label>Campaña origen<select id="leadCampaign"></select></label>
+            <label>Plataforma<select id="leadPlatform"></select></label>
+            <label>Nombre o identificador<input type="text" id="leadName" placeholder="Ej: María / IG-1234" /></label>
+            <label>Teléfono o referencia<input type="text" id="leadContact" placeholder="Opcional" /></label>
+            <label>Servicio de interés<select id="leadService"></select></label>
+            <label>Tipo de oferta<select id="leadOfferType"></select></label>
+            <label>Edad / perfil
+              <select id="leadProfile">
+                <option value="">Sin definir</option>
+                <option value="Niño">Niño</option>
+                <option value="Joven">Joven</option>
+                <option value="Adulto">Adulto</option>
+                <option value="Familia">Familia</option>
+                <option value="Empresa / institución">Empresa / institución</option>
+                <option value="No definido">No definido</option>
+              </select>
+            </label>
+            <label>Estado comercial
+              <select id="leadStatus">
+                <option value="Lead nuevo">Lead nuevo</option>
+                <option value="Contactado">Contactado</option>
+                <option value="Respondió">Respondió</option>
+                <option value="Calificado">Calificado</option>
+                <option value="Clase de prueba agendada">Clase de prueba agendada</option>
+                <option value="Asistió a prueba">Asistió a prueba</option>
+                <option value="Matrícula">Matrícula</option>
+                <option value="Pagó">Pagó</option>
+                <option value="Perdido">Perdido</option>
+              </select>
+            </label>
+            <label>Motivo de pérdida
+              <select id="leadLossReason">
+                <option value="">No aplica</option>
+                <option value="Precio">Precio</option>
+                <option value="Horario">Horario</option>
+                <option value="Ubicación">Ubicación</option>
+                <option value="No respondió">No respondió</option>
+                <option value="Solo preguntó">Solo preguntó</option>
+                <option value="No era el servicio">No era el servicio</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </label>
+            <label>Responsable<input type="text" id="leadResponsible" placeholder="Quién hace seguimiento" /></label>
+            <label>Próxima acción<input type="text" id="leadNextAction" placeholder="Ej: llamar, enviar info" /></label>
+            <label>Fecha próximo contacto<input type="date" id="leadNextContactDate" /></label>
+            <label>Valor pagado<input type="number" id="leadPaidValue" min="0" step="any" inputmode="decimal" /></label>
+          </div>
+          <label>Notas<textarea id="leadNotes" rows="2"></textarea></label>
+          <div class="modal-actions">
+            <button type="button" id="leadCancelEditBtn" hidden>Cancelar edición</button>
+            <button id="leadSaveBtn" type="submit" class="primary">Guardar lead</button>
+          </div>
+          <p class="form-help">Un lead no equivale a una matrícula: clasifica el servicio y actualiza el estado a medida que avanza.</p>
+        </form>
+      </div>
+
+      <div class="card lead-list-card">
+        <h3>Leads registrados</h3>
+
+        <div class="lead-filters">
+          <label>Campaña<select id="leadFilterCampaign"><option value="">Todas</option></select></label>
+          <label>Plataforma<select id="leadFilterPlatform"><option value="">Todas</option></select></label>
+          <label>Servicio<select id="leadFilterService"><option value="">Todos</option></select></label>
+          <label>Tipo de oferta<select id="leadFilterOfferType"><option value="">Todos</option></select></label>
+          <label>Estado
+            <select id="leadFilterStatus">
+              <option value="">Todos</option>
+              <option value="Lead nuevo">Lead nuevo</option>
+              <option value="Contactado">Contactado</option>
+              <option value="Respondió">Respondió</option>
+              <option value="Calificado">Calificado</option>
+              <option value="Clase de prueba agendada">Clase de prueba agendada</option>
+              <option value="Asistió a prueba">Asistió a prueba</option>
+              <option value="Matrícula">Matrícula</option>
+              <option value="Pagó">Pagó</option>
+              <option value="Perdido">Perdido</option>
+            </select>
+          </label>
+          <label>Responsable<input type="text" id="leadFilterResponsible" placeholder="Buscar" /></label>
+          <button type="button" id="leadFilterClear" class="btn-mini">Limpiar</button>
+        </div>
+
+        <div id="leadsTable"></div>
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- SERVICES -->
+  <section id="view-services" class="view">
+    <div class="page-header">
+      <h2>Servicios</h2>
+      <p class="form-help">Demanda y resultados por servicio, calculados desde los leads registrados y el gasto de las campañas de cada servicio.</p>
+    </div>
+    <div class="card">
+      <div id="servicesTable"></div>
+    </div>
+  </section>
+
+
+  <!-- FUNNEL -->
+  <section id="view-funnel" class="view">
+    <div class="page-header">
+      <h2>Embudo comercial</h2>
+      <p class="form-help">Cómo avanzan los leads de una etapa a la siguiente. Un lead no equivale a una matrícula.</p>
+    </div>
+
+    <div class="card">
+      <div class="lead-filters">
+        <label>Campaña<select id="funnelFilterCampaign"><option value="">Todas</option></select></label>
+        <label>Plataforma<select id="funnelFilterPlatform"><option value="">Todas</option></select></label>
+        <label>Servicio<select id="funnelFilterService"><option value="">Todos</option></select></label>
+        <label>Tipo de oferta<select id="funnelFilterOfferType"><option value="">Todos</option></select></label>
+        <label>Desde<input type="date" id="funnelFilterFrom" /></label>
+        <label>Hasta<input type="date" id="funnelFilterTo" /></label>
+        <button type="button" id="funnelFilterClear" class="btn-mini">Limpiar</button>
+      </div>
+      <div id="funnelStages"></div>
+    </div>
+  </section>
+
+
+  <!-- BUDGET -->
+  <section id="view-budget" class="view">
+    <div class="page-header">
+      <h2>Presupuesto</h2>
+      <p class="form-help">Control del presupuesto máximo mensual y distribución sugerida (editable).</p>
+    </div>
+
+    <div class="card">
+      <h3>Resumen del mes en curso</h3>
+      <div id="budgetSummary"></div>
+    </div>
+
+    <div class="card">
+      <h3>Simulador de distribución</h3>
+      <p class="form-help">Prueba cómo repartir un presupuesto entre campañas, plataformas o ideas. Es solo una planeación visual: no modifica el gasto ni las campañas.</p>
+      <div id="budgetDistribution"></div>
+      <div class="modal-actions">
+        <button type="button" id="budgetDistributionSave" class="primary">Guardar distribución</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Campañas a vigilar</h3>
+      <div id="budgetRisks"></div>
+    </div>
+  </section>
+
+
+  <!-- CALENDAR -->
+  <section id="view-calendar" class="view">
+    <div class="page-header">
+      <h2>Calendario de publicaciones</h2>
+      <p class="form-help">Fechas importantes y temporadas (vacacionales, preuniversitario) para planear las publicaciones con anticipación. Las fechas precargadas son aproximadas: edítalas según el calendario real de cada año.</p>
+      <div class="page-actions">
+        <button type="button" id="btnCalendarSeed" class="btn-mini">Cargar temporadas del año</button>
+        <button type="button" id="btnCalendarNew" class="primary">+ Nuevo evento</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="calendar-toolbar">
+        <button type="button" id="calendarPrev" class="btn-mini" aria-label="Mes anterior">←</button>
+        <h3 id="calendarMonthLabel"></h3>
+        <button type="button" id="calendarNext" class="btn-mini" aria-label="Mes siguiente">→</button>
+        <button type="button" id="calendarToday" class="btn-mini">Hoy</button>
+      </div>
+      <div id="calendarGrid" class="calendar-grid"></div>
+      <p class="form-help" style="margin-top:10px">Haz clic sobre un evento del calendario para editarlo, o sobre un día vacío para crear uno nuevo en esa fecha.</p>
+    </div>
+
+    <div class="card">
+      <h3>Próximas fechas (60 días)</h3>
+      <div id="calendarUpcoming"></div>
+    </div>
+
+    <div class="card">
+      <h3>Todos los eventos</h3>
+      <p class="form-help">Lista completa de fechas y temporadas registradas. Desde aquí puedes editar cualquiera, incluso las de meses futuros.</p>
+      <div id="calendarAllEvents"></div>
+    </div>
+  </section>
+
+
   <!-- CONFIG -->
   <section id="view-config" class="view">
 
@@ -412,13 +673,30 @@
       </label>
 
       <label>
-        Servicio
+        Servicio principal
         <select id="campaignService"></select>
+        <small class="field-hint">Aunque la campaña sea general, clasifícala por el servicio que más busca atraer.</small>
       </label>
 
       <label>
-        Modalidad
+        Tipo de oferta
+        <select id="campaignOfferType"></select>
+      </label>
+
+      <label>
+        Lugar / modalidad
         <select id="campaignMode"></select>
+      </label>
+
+      <label>
+        Enfoque de campaña
+        <select id="campaignFocus"></select>
+      </label>
+
+      <label>
+        KPI principal
+        <select id="campaignKpi"></select>
+        <small class="field-hint">La métrica con la que se juzgará si esta campaña funciona.</small>
       </label>
 
       <label>
@@ -574,14 +852,136 @@
 </div>
 
 
+<div id="reactivateModal" class="modal hidden" aria-hidden="true">
+  <div class="modal-backdrop" data-action="close-reactivate-modal"></div>
+  <form id="reactivateForm" class="modal-panel">
+    <div class="modal-header">
+      <div>
+        <h2>Reactivar campaña</h2>
+        <p id="reactivateSourceName">Crea una versión nueva a partir de la campaña finalizada.</p>
+      </div>
+      <button type="button" class="icon-button" data-action="close-reactivate-modal" aria-label="Cerrar">×</button>
+    </div>
+
+    <input type="hidden" id="reactivateCampaignId" />
+
+    <label>
+      Tipo de reactivación
+      <select id="reactivateMode">
+        <option value="igual">Reactivar igual</option>
+        <option value="creativo">Reactivar con nuevo creativo</option>
+        <option value="presupuesto_reducido">Reactivar con presupuesto reducido</option>
+        <option value="test">Reactivar como campaña de test</option>
+        <option value="remarketing">Reactivar como remarketing</option>
+        <option value="taller">Reactivar como taller / temporada</option>
+      </select>
+      <small class="field-hint">"Presupuesto reducido" y "test" crean la copia con la mitad del presupuesto.</small>
+    </label>
+
+    <label>
+      Aprendizaje de la campaña anterior
+      <textarea id="reactivateLearning" rows="2" required placeholder="Ej: CPL bajo, pero faltó medir matrículas."></textarea>
+    </label>
+
+    <label>
+      Hipótesis de la reactivación
+      <textarea id="reactivateHypothesis" rows="2" required placeholder="Ej: Se reactiva con presupuesto reducido y seguimiento por servicio."></textarea>
+    </label>
+
+    <div class="modal-actions">
+      <button type="button" data-action="close-reactivate-modal">Cancelar</button>
+      <button id="reactivateSaveBtn" type="submit" class="primary">Reactivar</button>
+    </div>
+  </form>
+</div>
+
+
+<div id="calendarModal" class="modal hidden" aria-hidden="true">
+  <div class="modal-backdrop" data-action="close-calendar-modal"></div>
+  <form id="calendarForm" class="modal-panel">
+    <div class="modal-header">
+      <div>
+        <h2 id="calendarModalTitle">Nuevo evento</h2>
+        <p>Fechas importantes, temporadas o publicaciones programadas.</p>
+      </div>
+      <button type="button" class="icon-button" data-action="close-calendar-modal" aria-label="Cerrar">×</button>
+    </div>
+
+    <input type="hidden" id="calendarEventId" />
+
+    <div class="form-grid">
+      <label>
+        Título
+        <input id="calendarEventTitle" type="text" required placeholder="Ej: Vacacionales mitad de año" />
+      </label>
+
+      <label>
+        Tipo
+        <select id="calendarEventType">
+          <option value="temporada">Temporada</option>
+          <option value="publicacion">Publicación</option>
+          <option value="fecha_clave">Fecha clave</option>
+        </select>
+      </label>
+
+      <label>
+        Fecha inicio
+        <input id="calendarEventStart" type="date" required />
+      </label>
+
+      <label>
+        Fecha fin (opcional)
+        <input id="calendarEventEnd" type="date" />
+      </label>
+
+      <label>
+        Programa / servicio
+        <input id="calendarEventProgram" type="text" placeholder="Ej: Preuniversitario, Vacacionales" />
+      </label>
+
+      <label>
+        Canal
+        <input id="calendarEventChannel" type="text" placeholder="Ej: Instagram, Meta Ads" />
+      </label>
+
+      <label>
+        Estado
+        <select id="calendarEventStatus">
+          <option value="idea">Idea</option>
+          <option value="en_diseno">En diseño</option>
+          <option value="programada">Programada</option>
+          <option value="publicada">Publicada</option>
+        </select>
+      </label>
+
+      <label>
+        Campaña relacionada (opcional)
+        <select id="calendarEventCampaign"><option value="">Ninguna</option></select>
+      </label>
+    </div>
+
+    <label>
+      Notas
+      <textarea id="calendarEventNotes" rows="3"></textarea>
+    </label>
+
+    <div class="modal-actions">
+      <button type="button" id="calendarArchiveBtn" class="btn-mini" style="display:none">Archivar evento</button>
+      <button type="button" data-action="close-calendar-modal">Cancelar</button>
+      <button id="calendarSaveBtn" type="submit" class="primary">Guardar evento</button>
+    </div>
+  </form>
+</div>
+
+
 <!-- ================= SCRIPTS ================= -->
 
 <script src="./utils.js?v=20260424-2"></script>
 <script src="./state.js?v=20260424-2"></script>
-<script src="./ui.js?v=20260626-3"></script>
+<script src="./ui.js?v=20260630-1"></script>
 <script src="./charts.js?v=20260527-7"></script>
-<script type="module" src="./src/main.js?v=20260626-3"></script>
-<script src="./app.js?v=20260626-3"></script>
+<script type="module" src="./src/main.js?v=20260704-1"></script>
+<script src="./app.js?v=20260704-2"></script>
 
 </body>
 </html>

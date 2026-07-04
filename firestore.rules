@@ -35,12 +35,22 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /leads/{leadId} {
+      allow read, create, update: if isAllowedUser();
+      allow delete: if false;
+    }
+
     match /settings/{docId} {
       allow read, create, update: if isAllowedUser();
       allow delete: if false;
     }
 
     match /marketingTasks/{taskId} {
+      allow read, create, update: if isAllowedUser();
+      allow delete: if false;
+    }
+
+    match /contentCalendar/{eventId} {
       allow read, create, update: if isAllowedUser();
       allow delete: if false;
     }

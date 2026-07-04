@@ -55,30 +55,56 @@ export async function updateCampaignStatus(id, status) {
   });
 }
 
-export async function reactivateCampaign(id) {
+const REACTIVATION_MODES = {
+  igual: { suffix: "Reactivación", enfoque: "", budgetFactor: 1 },
+  creativo: { suffix: "Reactivación (nuevo creativo)", enfoque: "", budgetFactor: 1 },
+  presupuesto_reducido: { suffix: "Reactivación (presupuesto reducido)", enfoque: "", budgetFactor: 0.5 },
+  test: { suffix: "Test", enfoque: "Test", budgetFactor: 0.5 },
+  remarketing: { suffix: "Remarketing", enfoque: "Remarketing", budgetFactor: 1 },
+  taller: { suffix: "Taller / temporada", enfoque: "Taller / temporada", budgetFactor: 1 },
+};
+
+export async function reactivateCampaign(id, options = {}) {
   const campaigns = await listCampaigns();
   const source = campaigns.find((campaign) => String(campaign.campaign_id || campaign.id) === String(id));
   if (!source) throw new Error("No encontre la campana para reactivar.");
 
+  const mode = REACTIVATION_MODES[options.mode] || REACTIVATION_MODES.igual;
+  const learning = String(options.learning || "").trim();
+  const hypothesis = String(options.hypothesis || "").trim();
+
+  const baseName = source.nombre || source.name || "Campana";
   const today = localIsoDate(new Date());
   const newId = `RE-${today.replaceAll("-", "")}-${Math.random().toString(16).slice(2, 6).toUpperCase()}`;
+
+  const baseNotes = `Reactivada desde ${source.campaign_id || source.id}.`;
+  const learnNote = learning ? ` Aprendizaje: ${learning}.` : "";
+  const hypoNote = hypothesis ? ` Hipótesis: ${hypothesis}.` : "";
+  const combinedNotes = `${baseNotes}${learnNote}${hypoNote} ${source.notes || source.notas || ""}`.trim();
+
   await saveCampaign({
     ...source,
     campaign_id: newId,
     id: newId,
-    nombre: `${source.nombre || source.name || "Campana"} - Reactivacion`,
-    name: `${source.nombre || source.name || "Campana"} - Reactivacion`,
+    nombre: `${baseName} - ${mode.suffix}`,
+    name: `${baseName} - ${mode.suffix}`,
     estado: "Activa",
     status: "activa",
+    enfoque: mode.enfoque || source.enfoque || "",
+    presupuesto_diario: Math.round(Number(source.presupuesto_diario || 0) * mode.budgetFactor),
+    monthly_budget_target: Math.round(Number(source.monthly_budget_target || source.presupuesto_mensual || 0) * mode.budgetFactor),
     fecha_inicio: today,
     startDate: today,
     fecha_fin: "",
     endDate: "",
     fecha_creacion: today,
     createdAt: null,
-    notes: `Reactivada desde ${source.campaign_id || source.id}. ${source.notes || source.notas || ""}`.trim(),
-    notas: `Reactivada desde ${source.campaign_id || source.id}. ${source.notas || source.notes || ""}`.trim(),
+    notes: combinedNotes,
+    notas: combinedNotes,
     sourceCampaignId: source.campaign_id || source.id,
+    reactivation_mode: options.mode || "igual",
+    aprendizaje_previo: learning,
+    hipotesis: hypothesis,
   });
   return newId;
 }
@@ -123,7 +149,10 @@ export function toFirestoreCampaign(payload = {}) {
     fecha_creacion: payload.fecha_creacion || "",
     fecha_facturacion: payload.fecha_facturacion || "",
     servicio: payload.servicio || "",
+    tipo_oferta: payload.tipo_oferta || "",
     modalidad: payload.modalidad || "",
+    enfoque: payload.enfoque || "",
+    kpi_principal: payload.kpi_principal || "",
     modelo_cobro: payload.modelo_cobro || "",
     presupuesto_diario: Number(payload.presupuesto_diario || 0),
     presupuesto_mensual: Number(payload.presupuesto_mensual || payload.budget || 0),
@@ -136,6 +165,10 @@ export function toFirestoreCampaign(payload = {}) {
     cobro_total: Number(payload.cobro_total || 0),
     responsable: payload.responsable || "",
     notas: payload.notas || payload.notes || "",
+    continua_de: payload.continua_de || "",
+    reactivation_mode: payload.reactivation_mode || "",
+    aprendizaje_previo: payload.aprendizaje_previo || "",
+    hipotesis: payload.hipotesis || "",
   };
 }
 

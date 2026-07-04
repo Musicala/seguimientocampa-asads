@@ -19,6 +19,13 @@
     editingMetric: null,
     options: null,
     metricsHistoryFilter: '',
+    continuationSource: null,
+    leads: [],
+    editingLead: null,
+    budgetDistribution: [],
+    calendarEvents: [],
+    calendarMonth: null,
+    editingCalendarEvent: null,
     filters: {
       from: null, // YYYY-MM-DD
       to: null,   // YYYY-MM-DD
@@ -50,15 +57,20 @@
     wireCampaignSorting_();
     wireMetrics_();
     wireReality_();
+    wireLeads_();
+    wireStrategicViews_();
+    wireReactivate_();
     wireDashboardFilters_();
     wireBudgetQuickEdit_();
     wireDecisionExports_();
     wireConfig_();
     wireMetricsHistoryFilter_();
+    wireCalendar_();
 
     // Opciones por defecto para que los desplegables no esten vacios antes de conectar.
     App.options = normalizeOptions_(null);
     populateOptionSelects_();
+    populateLeadSelects_();
     renderOptionsConfig_();
 
     // Defaults: rango mes actual
@@ -158,6 +170,7 @@
     }
     fillBudgetCampaignSelect_();
     fillMetricsHistoryFilter_();
+    fillLeadCampaignSelects_();
     updateMetricPlatformUI_();
 
     // Default fecha del formulario
@@ -246,6 +259,8 @@
     } else {
       // fallback: no llora
     }
+
+    renderStrategicDashboard_(res);
   }
 
   // ---------- CAMPAIGNS ----------
@@ -287,6 +302,10 @@
     document.addEventListener('campaign:reactivate', (ev) => {
       const id = ev.detail?.campaign_id || '';
       if (id) onReactivateCampaign_(id);
+    });
+    document.addEventListener('campaign:continue', (ev) => {
+      const id = ev.detail?.campaign_id || '';
+      if (id) onContinueCampaign_(id);
     });
   }
 
@@ -360,20 +379,146 @@
     await refreshDashboard_();
   }
 
-  async function onReactivateCampaign_(campaignId) {
+  function onReactivateCampaign_(campaignId) {
     const current = App.campaigns.find(c => String(c.campaign_id || '') === String(campaignId));
     if (!current) return;
-    if (!confirm(`Reactivar "${current.nombre || current.name || campaignId}" como una nueva campana activa?`)) return;
+    openReactivateModal_(current);
+  }
 
-    const res = await safeCall_(() => API.reactivateCampaign(campaignId));
+  function openReactivateModal_(campaign) {
+    const modal = $('reactivateModal');
+    if (!modal) return;
+    setCampaignFormValue_('reactivateCampaignId', campaign.campaign_id || '');
+    const name = $('reactivateSourceName');
+    if (name) name.textContent = `Se creará una versión nueva de "${campaign.nombre || campaign.name || campaign.campaign_id}".`;
+    if ($('reactivateMode')) $('reactivateMode').value = 'igual';
+    if ($('reactivateLearning')) $('reactivateLearning').value = '';
+    if ($('reactivateHypothesis')) $('reactivateHypothesis').value = '';
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+    $('reactivateLearning')?.focus();
+  }
+
+  function closeReactivateModal_() {
+    const modal = $('reactivateModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function wireReactivate_() {
+    const form = $('reactivateForm');
+    if (form) form.addEventListener('submit', onSubmitReactivate_);
+    document.querySelectorAll('[data-action="close-reactivate-modal"]').forEach(el => {
+      el.addEventListener('click', closeReactivateModal_);
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') closeReactivateModal_();
+    });
+  }
+
+  async function onSubmitReactivate_(ev) {
+    ev.preventDefault();
+    const btn = $('reactivateSaveBtn') || ev.submitter;
+    const campaignId = $('reactivateCampaignId')?.value || '';
+    const learning = strForm_('reactivateLearning');
+    const hypothesis = strForm_('reactivateHypothesis');
+    if (!learning || !hypothesis) {
+      UIx.toast('Escribe el aprendizaje y la hipótesis', 'warning');
+      return;
+    }
+    const options = { mode: strForm_('reactivateMode') || 'igual', learning, hypothesis };
+    setButtonLoading(btn, true, 'Reactivando...');
+    let res;
+    try {
+      res = await safeCall_(() => API.reactivateCampaign(campaignId, options));
+    } finally {
+      setButtonLoading(btn, false);
+    }
     if (!res?.ok) {
       UIx.toast(res?.error || 'No se pudo reactivar la campana', 'error');
       return;
     }
-
-    UIx.toast('Campana reactivada', 'success');
+    closeReactivateModal_();
+    UIx.toast('Campaña reactivada', 'success');
     await refreshCampaigns_();
     await refreshDashboard_();
+  }
+
+  function onContinueCampaign_(campaignId) {
+    const source = App.campaigns.find(c => String(c.campaign_id || '') === String(campaignId));
+    if (!source) {
+      UIx.toast('No encontre esa campaña para continuar', 'error');
+      return;
+    }
+
+    // Clon para el mes siguiente: mismos datos, sin id (será nueva campaña),
+    // nombre y fechas avanzados un mes, y métricas de gasto en cero.
+    const range = nextMonthRange_(source.fecha_inicio, source.fecha_fin);
+    const clone = {
+      ...source,
+      campaign_id: '',
+      fecha_creacion: '',
+      nombre: nextMonthName_(source.nombre || '') || `${source.nombre || ''} (continuación)`,
+      fecha_inicio: range.start,
+      fecha_fin: range.end,
+      fecha_facturacion: '',
+      estado: 'Activa',
+      // empezar limpio: el gasto/cobro del mes anterior no se arrastra
+      gasto_ads_total: 0,
+      reported_spend: 0,
+      iva_total: 0,
+      cobro_total: 0,
+    };
+
+    openCampaignModal_(clone);
+    // openCampaignModal_ reinicia continuationSource; lo fijamos después
+    App.continuationSource = String(source.campaign_id || '');
+    if ($('campaignBudgetMode')) $('campaignBudgetMode').dataset.userTouched = '1';
+    const title = $('campaignModalTitle');
+    if (title) title.textContent = 'Continuar campaña';
+    UIx.toast('Revisa nombre, fechas y presupuesto antes de guardar', 'info');
+  }
+
+  // Meses en español para detectar y avanzar el mes en el nombre de la campaña
+  const MESES_ES_ = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+  function nextMonthName_(name) {
+    const original = String(name || '');
+    if (!original) return '';
+    const lower = original.toLowerCase();
+    let bestIdx = -1;
+    let bestMonth = -1;
+    for (let i = 0; i < MESES_ES_.length; i++) {
+      const idx = lower.lastIndexOf(MESES_ES_[i]);
+      if (idx > bestIdx) {
+        bestIdx = idx;
+        bestMonth = i;
+      }
+    }
+    if (bestIdx === -1) return '';
+    const found = original.substr(bestIdx, MESES_ES_[bestMonth].length);
+    const next = MESES_ES_[(bestMonth + 1) % 12];
+    const replacement = /^[A-ZÁÉÍÓÚÑ]/.test(found) ? next.charAt(0).toUpperCase() + next.slice(1) : next;
+    return original.slice(0, bestIdx) + replacement + original.slice(bestIdx + found.length);
+  }
+
+  function nextMonthRange_(startStr, endStr) {
+    const base = parseYMD_(startStr) || new Date();
+    const y = base.getFullYear();
+    const m = base.getMonth();
+    const firstNext = new Date(y, m + 1, 1);
+    const lastNext = new Date(y, m + 2, 0);
+    return {
+      start: toISODate(firstNext),
+      end: endStr ? toISODate(lastNext) : '',
+    };
+  }
+
+  function parseYMD_(s) {
+    const m = String(s || '').match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return null;
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   }
 
   async function onSubmitCampaign_(ev) {
@@ -412,6 +557,7 @@
 
     const isEdit = Boolean(campaign?.campaign_id);
     if (title) title.textContent = isEdit ? 'Editar campaña' : 'Nueva campaña';
+    App.continuationSource = campaign?.continua_de || null;
 
     setCampaignFormValue_('campaignId', campaign?.campaign_id || '');
     if ($('campaignBudgetMode')) $('campaignBudgetMode').dataset.userTouched = isEdit ? '1' : '';
@@ -420,7 +566,10 @@
     setCampaignSelectValue_('campaignPlatform', campaign?.plataforma || '');
     setCampaignSelectValue_('campaignObjective', campaign?.objetivo || '');
     setCampaignSelectValue_('campaignService', campaign?.servicio || '');
+    setCampaignSelectValue_('campaignOfferType', campaign?.tipo_oferta || '');
     setCampaignSelectValue_('campaignMode', campaign?.modalidad || '');
+    setCampaignSelectValue_('campaignFocus', campaign?.enfoque || '');
+    setCampaignSelectValue_('campaignKpi', campaign?.kpi_principal || '');
     setCampaignFormValue_('campaignStart', normalizeDateInput_(campaign?.fecha_inicio) || toISODate(new Date()));
     setCampaignFormValue_('campaignEnd', normalizeDateInput_(campaign?.fecha_fin));
     setCampaignFormValue_('campaignBillingDate', normalizeDateInput_(campaign?.fecha_facturacion));
@@ -463,7 +612,10 @@
       plataforma: strForm_('campaignPlatform'),
       objetivo: strForm_('campaignObjective'),
       servicio: strForm_('campaignService'),
+      tipo_oferta: strForm_('campaignOfferType'),
       modalidad: strForm_('campaignMode'),
+      enfoque: strForm_('campaignFocus'),
+      kpi_principal: strForm_('campaignKpi'),
       fecha_inicio: $('campaignStart')?.value || toISODate(new Date()),
       fecha_fin: $('campaignEnd')?.value || '',
       fecha_facturacion: $('campaignBillingDate')?.value || '',
@@ -487,6 +639,7 @@
       cobro_total: parseNum($('campaignTotalCharge')?.value),
       responsable: '',
       notas: strForm_('campaignNotes'),
+      continua_de: App.continuationSource || '',
     };
   }
 
@@ -1056,6 +1209,7 @@
     else fillSelectFallback_($('realityCampaign'), App.campaigns);
     fillBudgetCampaignSelect_();
     fillMetricsHistoryFilter_();
+    fillLeadCampaignSelects_();
     updateMetricPlatformUI_();
   }
 
@@ -1391,8 +1545,11 @@
     canales: ['Meta', 'Google Ads', 'TikTok', 'Otro'],
     plataformas: ['Business Meta', 'Google Search', 'Google Display', 'Google Performance Max', 'TikTok Ads', 'Otro'],
     objetivos: ['Mensajes', 'Leads', 'Conversiones', 'Trafico', 'Reconocimiento', 'Interaccion', 'Reproducciones de video'],
-    servicios: ['Talleres vacacionales', 'Clases regulares', 'Cursos', 'Clases particulares', 'Otro'],
-    modalidades: ['Sede', 'Hogar', 'Virtual', 'Hibrida'],
+    servicios: ['Multiservicio / marca general', 'Musica general', 'Piano', 'Canto', 'Bateria', 'Cuerdas frotadas', 'Musicalitos / exploracion musical', 'Artes plasticas', 'Danza', 'Teatro', 'Vacacionales', 'Talleres especiales', 'Otro'],
+    tiposOferta: ['Personalizada', 'Grupal', 'Taller', 'Vacacional', 'Evento', 'Mixta'],
+    modalidades: ['Sede', 'Hogar', 'Virtual', 'Hibrida', 'No aplica'],
+    enfoques: ['General', 'Servicio especifico', 'Taller / temporada', 'Remarketing', 'Reactivacion', 'Test'],
+    kpisPrincipales: ['Costo por lead', 'Costo por contacto real', 'Costo por lead calificado', 'Costo por clase de prueba', 'Costo por matricula', 'ROAS real', 'Ingreso real'],
     modelosCobro: ['Meta cobro total', 'Meta diario', 'Google Ads diario', 'Pago unico', 'Otro'],
   };
 
@@ -1402,7 +1559,10 @@
     { selectId: 'campaignPlatform', key: 'plataformas', label: 'Plataformas' },
     { selectId: 'campaignObjective', key: 'objetivos', label: 'Objetivos' },
     { selectId: 'campaignService', key: 'servicios', label: 'Servicios' },
-    { selectId: 'campaignMode', key: 'modalidades', label: 'Modalidades' },
+    { selectId: 'campaignOfferType', key: 'tiposOferta', label: 'Tipos de oferta' },
+    { selectId: 'campaignMode', key: 'modalidades', label: 'Lugar / modalidad' },
+    { selectId: 'campaignFocus', key: 'enfoques', label: 'Enfoques de campaña' },
+    { selectId: 'campaignKpi', key: 'kpisPrincipales', label: 'KPI principal' },
     { selectId: 'campaignBillingModel', key: 'modelosCobro', label: 'Modelos de cobro' },
   ];
 
@@ -1414,6 +1574,7 @@
     }
     App.options = normalizeOptions_(options);
     populateOptionSelects_();
+    populateLeadSelects_();
     renderOptionsConfig_();
   }
 
@@ -1571,6 +1732,307 @@
     }
   }
 
+  // ---------- CALENDARIO DE PUBLICACIONES ----------
+  const CAL_MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const CAL_DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  const CAL_STATUS_LABELS = { idea: 'Idea', en_diseno: 'En diseño', programada: 'Programada', publicada: 'Publicada' };
+  const CAL_TYPE_LABELS = { temporada: 'Temporada', publicacion: 'Publicación', fecha_clave: 'Fecha clave' };
+
+  function wireCalendar_() {
+    $('btnCalendarNew')?.addEventListener('click', () => openCalendarModal_());
+    $('btnCalendarSeed')?.addEventListener('click', onCalendarSeed_);
+    $('calendarPrev')?.addEventListener('click', () => shiftCalendarMonth_(-1));
+    $('calendarNext')?.addEventListener('click', () => shiftCalendarMonth_(1));
+    $('calendarToday')?.addEventListener('click', () => {
+      const now = new Date();
+      App.calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      renderCalendar_();
+    });
+    $('calendarForm')?.addEventListener('submit', onCalendarSubmit_);
+    $('calendarArchiveBtn')?.addEventListener('click', onCalendarArchive_);
+    document.querySelectorAll('[data-action="close-calendar-modal"]').forEach(el => {
+      el.addEventListener('click', closeCalendarModal_);
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') closeCalendarModal_();
+    });
+  }
+
+  function shiftCalendarMonth_(delta) {
+    const base = App.calendarMonth || new Date();
+    App.calendarMonth = new Date(base.getFullYear(), base.getMonth() + delta, 1);
+    renderCalendar_();
+  }
+
+  async function refreshCalendar_() {
+    if (!API?.listCalendarEvents) return;
+    const res = await safeCall_(() => API.listCalendarEvents());
+    if (!res?.ok) {
+      UIx.toast(res?.error || 'No se pudo cargar el calendario', 'error');
+      return;
+    }
+    App.calendarEvents = res.rows || [];
+    if (!App.calendarMonth) {
+      const now = new Date();
+      App.calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+    renderCalendar_();
+  }
+
+  function calendarProgramClass_(event) {
+    const program = String(event.program || '').toLowerCase();
+    if (program.includes('vacacional') || program.includes('vacaciones')) return 'cal-vacacionales';
+    if (program.includes('preuniversitario') || program.includes('preu')) return 'cal-preu';
+    if (program.includes('regular') || program.includes('clases')) return 'cal-regular';
+    if (event.type === 'publicacion') return 'cal-publicacion';
+    return 'cal-otro';
+  }
+
+  function calendarEventRange_(event) {
+    const start = String(event.startDate || '');
+    const end = String(event.endDate || '') || start;
+    return { start, end: end < start ? start : end };
+  }
+
+  function renderCalendar_() {
+    renderCalendarGrid_();
+    renderCalendarUpcoming_();
+    renderCalendarAllEvents_();
+  }
+
+  function renderCalendarAllEvents_() {
+    const el = $('calendarAllEvents');
+    if (!el) return;
+
+    const events = (App.calendarEvents || [])
+      .map(e => ({ event: e, range: calendarEventRange_(e) }))
+      .sort((a, b) => a.range.start.localeCompare(b.range.start));
+
+    if (!events.length) {
+      el.innerHTML = '<p class="muted">Todavía no hay eventos. Usa "Cargar temporadas del año" o "+ Nuevo evento".</p>';
+      return;
+    }
+
+    el.innerHTML = events.map(({ event, range }) => {
+      const dates = range.end !== range.start ? `${range.start} → ${range.end}` : range.start;
+      return `
+        <div class="calendar-upcoming-row">
+          <span class="calendar-dot ${calendarProgramClass_(event)}"></span>
+          <div class="calendar-upcoming-info">
+            <strong>${escapeHtml(event.title)}</strong>
+            <span class="muted">${dates}${event.program ? ` · ${escapeHtml(event.program)}` : ''}${event.channel ? ` · ${escapeHtml(event.channel)}` : ''}</span>
+          </div>
+          <span class="badge">${escapeHtml(CAL_STATUS_LABELS[event.status] || event.status || '')}</span>
+          <button type="button" class="btn-mini" data-cal-edit-all="${escapeHtml(event.id)}">Editar</button>
+        </div>`;
+    }).join('');
+
+    el.querySelectorAll('[data-cal-edit-all]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const event = (App.calendarEvents || []).find(e => e.id === btn.dataset.calEditAll);
+        if (event) openCalendarModal_(event);
+      });
+    });
+  }
+
+  function renderCalendarGrid_() {
+    const grid = $('calendarGrid');
+    const label = $('calendarMonthLabel');
+    if (!grid) return;
+
+    const month = App.calendarMonth || new Date();
+    const year = month.getFullYear();
+    const monthIndex = month.getMonth();
+    if (label) label.textContent = `${CAL_MONTHS[monthIndex]} ${year}`;
+
+    const firstDay = new Date(year, monthIndex, 1);
+    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+    // Lunes = 0 ... Domingo = 6
+    const leadingBlanks = (firstDay.getDay() + 6) % 7;
+    const todayIso = toISODate(new Date());
+
+    let html = CAL_DAYS.map(d => `<div class="calendar-dow">${d}</div>`).join('');
+    for (let i = 0; i < leadingBlanks; i++) html += '<div class="calendar-cell calendar-cell-empty"></div>';
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const iso = toISODate(new Date(year, monthIndex, day));
+      const events = (App.calendarEvents || []).filter(e => {
+        const { start, end } = calendarEventRange_(e);
+        return start && start <= iso && iso <= end;
+      });
+      const chips = events.map(e => `
+        <button type="button" class="calendar-chip ${calendarProgramClass_(e)}" data-cal-id="${escapeHtml(e.id)}" title="${escapeHtml(e.title)} · ${escapeHtml(CAL_TYPE_LABELS[e.type] || e.type || '')}">
+          ${escapeHtml(e.title)}
+        </button>`).join('');
+      html += `
+        <div class="calendar-cell${iso === todayIso ? ' calendar-cell-today' : ''}" data-cal-date="${iso}">
+          <span class="calendar-daynum">${day}</span>
+          ${chips}
+        </div>`;
+    }
+
+    grid.innerHTML = html;
+
+    grid.querySelectorAll('.calendar-chip').forEach(chip => {
+      chip.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const event = (App.calendarEvents || []).find(e => e.id === chip.dataset.calId);
+        if (event) openCalendarModal_(event);
+      });
+    });
+    grid.querySelectorAll('.calendar-cell[data-cal-date]').forEach(cell => {
+      cell.addEventListener('click', () => openCalendarModal_(null, cell.dataset.calDate));
+    });
+  }
+
+  function renderCalendarUpcoming_() {
+    const el = $('calendarUpcoming');
+    if (!el) return;
+
+    const today = toISODate(new Date());
+    const horizon = new Date();
+    horizon.setDate(horizon.getDate() + 60);
+    const limit = toISODate(horizon);
+
+    const upcoming = (App.calendarEvents || [])
+      .map(e => ({ event: e, range: calendarEventRange_(e) }))
+      .filter(({ range }) => range.start && range.end >= today && range.start <= limit)
+      .sort((a, b) => a.range.start.localeCompare(b.range.start));
+
+    if (!upcoming.length) {
+      el.innerHTML = '<p class="muted">No hay fechas próximas en los siguientes 60 días. Usa "Cargar temporadas del año" o crea un evento.</p>';
+      return;
+    }
+
+    el.innerHTML = upcoming.map(({ event, range }) => {
+      const ongoing = range.start <= today;
+      const dates = range.end !== range.start ? `${range.start} → ${range.end}` : range.start;
+      return `
+        <div class="calendar-upcoming-row">
+          <span class="calendar-dot ${calendarProgramClass_(event)}"></span>
+          <div class="calendar-upcoming-info">
+            <strong>${escapeHtml(event.title)}</strong>
+            <span class="muted">${dates}${event.program ? ` · ${escapeHtml(event.program)}` : ''}${event.channel ? ` · ${escapeHtml(event.channel)}` : ''}</span>
+          </div>
+          <span class="badge">${ongoing ? 'En curso' : escapeHtml(CAL_STATUS_LABELS[event.status] || event.status || '')}</span>
+          <button type="button" class="btn-mini" data-cal-edit="${escapeHtml(event.id)}">Editar</button>
+        </div>`;
+    }).join('');
+
+    el.querySelectorAll('[data-cal-edit]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const event = (App.calendarEvents || []).find(e => e.id === btn.dataset.calEdit);
+        if (event) openCalendarModal_(event);
+      });
+    });
+  }
+
+  function openCalendarModal_(event = null, presetDate = '') {
+    const modal = $('calendarModal');
+    if (!modal) return;
+
+    App.editingCalendarEvent = event ? event.id : null;
+    $('calendarModalTitle').textContent = event ? 'Editar evento' : 'Nuevo evento';
+    $('calendarEventId').value = event?.id || '';
+    $('calendarEventTitle').value = event?.title || '';
+    $('calendarEventType').value = event?.type || 'fecha_clave';
+    $('calendarEventStart').value = event?.startDate || presetDate || '';
+    $('calendarEventEnd').value = event?.endDate || '';
+    $('calendarEventProgram').value = event?.program || '';
+    $('calendarEventChannel').value = event?.channel || '';
+    $('calendarEventStatus').value = event?.status || 'idea';
+    $('calendarEventNotes').value = event?.notes || '';
+    $('calendarArchiveBtn').style.display = event ? '' : 'none';
+
+    const campaignSelect = $('calendarEventCampaign');
+    if (campaignSelect) {
+      campaignSelect.innerHTML = '<option value="">Ninguna</option>';
+      (App.campaigns || []).forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.campaign_id;
+        opt.textContent = c.nombre || c.campaign_id;
+        campaignSelect.appendChild(opt);
+      });
+      campaignSelect.value = event?.campaignId || '';
+    }
+
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+    $('calendarEventTitle')?.focus();
+  }
+
+  function closeCalendarModal_() {
+    const modal = $('calendarModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+    App.editingCalendarEvent = null;
+  }
+
+  async function onCalendarSubmit_(ev) {
+    ev.preventDefault();
+    const btn = $('calendarSaveBtn');
+    const payload = {
+      title: $('calendarEventTitle').value,
+      type: $('calendarEventType').value,
+      startDate: $('calendarEventStart').value,
+      endDate: $('calendarEventEnd').value,
+      program: $('calendarEventProgram').value,
+      channel: $('calendarEventChannel').value,
+      status: $('calendarEventStatus').value,
+      campaignId: $('calendarEventCampaign')?.value || '',
+      notes: $('calendarEventNotes').value,
+    };
+
+    setButtonLoading(btn, true, 'Guardando...');
+    try {
+      const id = App.editingCalendarEvent;
+      const res = await safeCall_(() => id ? API.updateCalendarEvent(id, payload) : API.addCalendarEvent(payload));
+      if (!res?.ok) {
+        UIx.toast(res?.error || 'No se pudo guardar el evento', 'error');
+        return;
+      }
+      closeCalendarModal_();
+      UIx.toast(id ? 'Evento actualizado' : 'Evento creado', 'success');
+      await refreshCalendar_();
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  }
+
+  async function onCalendarArchive_() {
+    const id = App.editingCalendarEvent;
+    if (!id) return;
+    if (!confirm('¿Archivar este evento? Dejará de verse en el calendario.')) return;
+    const res = await safeCall_(() => API.archiveCalendarEvent(id));
+    if (!res?.ok) {
+      UIx.toast(res?.error || 'No se pudo archivar el evento', 'error');
+      return;
+    }
+    closeCalendarModal_();
+    UIx.toast('Evento archivado', 'success');
+    await refreshCalendar_();
+  }
+
+  async function onCalendarSeed_() {
+    const btn = $('btnCalendarSeed');
+    const year = (App.calendarMonth || new Date()).getFullYear();
+    if (!confirm(`Se cargarán las temporadas de Musicala para ${year} (inicio de año, Semana Santa, mitad de año, preuniversitario, receso de octubre y fin de año). Las que ya existan no se duplican. ¿Continuar?`)) return;
+    setButtonLoading(btn, true, 'Cargando...');
+    try {
+      const res = await safeCall_(() => API.seedCalendarDefaults(year));
+      if (!res?.ok) {
+        UIx.toast(res?.error || 'No se pudieron cargar las temporadas', 'error');
+        return;
+      }
+      const count = res.created?.length || 0;
+      UIx.toast(count ? `${count} temporadas agregadas` : 'Las temporadas de este año ya estaban cargadas', 'success');
+      await refreshCalendar_();
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  }
+
   // ---------- TABS ----------
   function wireTabs_() {
     const tabs = document.querySelectorAll('.tab');
@@ -1584,6 +2046,11 @@
 
         if (view === 'dashboard') await refreshDashboard_();
         if (view === 'metrics') await refreshRecentMetrics_();
+        if (view === 'leads') await refreshLeads_();
+        if (view === 'services') await refreshServices_();
+        if (view === 'funnel') await refreshFunnel_();
+        if (view === 'budget') await refreshBudget_();
+        if (view === 'calendar') await refreshCalendar_();
       });
     });
   }
@@ -1840,6 +2307,843 @@
     } finally {
       setButtonLoading(btn, false);
     }
+  }
+
+  // ---------- LEADS ----------
+  function fillLeadCampaignSelects_() {
+    const campaigns = App.campaigns || [];
+    const form = $('leadCampaign');
+    if (form) {
+      const current = form.value;
+      form.innerHTML = '<option value="">Sin campaña / directo</option>';
+      campaigns.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.campaign_id || '';
+        opt.textContent = `${c.nombre || c.campaign_id || ''}${c.canal ? ` - ${c.canal}` : ''}`;
+        form.appendChild(opt);
+      });
+      form.value = current;
+    }
+    ['leadFilterCampaign', 'funnelFilterCampaign'].forEach(id => {
+      const filter = $(id);
+      if (!filter) return;
+      const current = filter.value;
+      filter.innerHTML = '<option value="">Todas</option>';
+      campaigns.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.campaign_id || '';
+        opt.textContent = c.nombre || c.campaign_id || '';
+        filter.appendChild(opt);
+      });
+      filter.value = current;
+    });
+  }
+
+  function fillLeadOptionSelect_(id, list, placeholder) {
+    const sel = $(id);
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = `<option value="">${placeholder}</option>`;
+    (list || []).forEach(value => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = value;
+      sel.appendChild(opt);
+    });
+    // Conserva valores antiguos que ya no esten en la lista.
+    if (current && !Array.from(sel.options).some(o => o.value === current)) {
+      const opt = document.createElement('option');
+      opt.value = current;
+      opt.textContent = current;
+      sel.appendChild(opt);
+    }
+    sel.value = current;
+  }
+
+  function populateLeadSelects_() {
+    const opts = App.options || FALLBACK_OPTIONS;
+    fillLeadOptionSelect_('leadPlatform', opts.canales, 'Selecciona...');
+    fillLeadOptionSelect_('leadService', opts.servicios, 'Selecciona...');
+    fillLeadOptionSelect_('leadOfferType', opts.tiposOferta, 'Selecciona...');
+    fillLeadOptionSelect_('leadFilterPlatform', opts.canales, 'Todas');
+    fillLeadOptionSelect_('leadFilterService', opts.servicios, 'Todos');
+    fillLeadOptionSelect_('leadFilterOfferType', opts.tiposOferta, 'Todos');
+    fillLeadOptionSelect_('funnelFilterPlatform', opts.canales, 'Todas');
+    fillLeadOptionSelect_('funnelFilterService', opts.servicios, 'Todos');
+    fillLeadOptionSelect_('funnelFilterOfferType', opts.tiposOferta, 'Todos');
+  }
+
+  function wireLeads_() {
+    const form = $('leadForm');
+    if (form) form.addEventListener('submit', onSubmitLead_);
+    const dateEl = $('leadDate');
+    if (dateEl && !dateEl.value) dateEl.value = toISODate(new Date());
+
+    ['leadFilterCampaign', 'leadFilterPlatform', 'leadFilterService', 'leadFilterOfferType', 'leadFilterStatus'].forEach(id => {
+      const el = $(id);
+      if (el) el.addEventListener('change', renderLeadsTable_);
+    });
+    const resp = $('leadFilterResponsible');
+    if (resp) resp.addEventListener('input', renderLeadsTable_);
+    const clear = $('leadFilterClear');
+    if (clear) clear.addEventListener('click', () => {
+      ['leadFilterCampaign', 'leadFilterPlatform', 'leadFilterService', 'leadFilterOfferType', 'leadFilterStatus', 'leadFilterResponsible'].forEach(id => {
+        const el = $(id);
+        if (el) el.value = '';
+      });
+      renderLeadsTable_();
+    });
+    const cancel = $('leadCancelEditBtn');
+    if (cancel) cancel.addEventListener('click', resetLeadForm_);
+  }
+
+  function readLeadForm_() {
+    return {
+      date: $('leadDate')?.value || '',
+      campaign_id: $('leadCampaign')?.value || '',
+      platform: strForm_('leadPlatform'),
+      name: strForm_('leadName'),
+      contact: strForm_('leadContact'),
+      service: strForm_('leadService'),
+      offerType: strForm_('leadOfferType'),
+      profile: strForm_('leadProfile'),
+      status: strForm_('leadStatus'),
+      lossReason: strForm_('leadLossReason'),
+      responsible: strForm_('leadResponsible'),
+      nextAction: strForm_('leadNextAction'),
+      nextContactDate: $('leadNextContactDate')?.value || '',
+      paidValue: parseNum($('leadPaidValue')?.value),
+      notes: strForm_('leadNotes'),
+    };
+  }
+
+  async function onSubmitLead_(ev) {
+    ev.preventDefault();
+    const btn = $('leadSaveBtn') || ev.submitter;
+    const payload = readLeadForm_();
+    if (!payload.date) {
+      UIx.toast('Selecciona una fecha', 'warning');
+      return;
+    }
+    const editingId = App.editingLead;
+    setButtonLoading(btn, true, 'Guardando...');
+    try {
+      const res = editingId
+        ? await safeCall_(() => API.updateLead(editingId, payload))
+        : await safeCall_(() => API.addLead(payload));
+      if (!res?.ok) {
+        UIx.toast(res?.error || 'No se pudo guardar el lead', 'error');
+        return;
+      }
+      UIx.toast(editingId ? 'Lead actualizado' : 'Lead guardado', 'success');
+      resetLeadForm_();
+      await refreshLeads_();
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  }
+
+  function resetLeadForm_() {
+    App.editingLead = null;
+    $('leadForm')?.reset();
+    if ($('leadDate')) $('leadDate').value = toISODate(new Date());
+    const cancel = $('leadCancelEditBtn');
+    if (cancel) cancel.hidden = true;
+    const btn = $('leadSaveBtn');
+    if (btn) btn.textContent = 'Guardar lead';
+  }
+
+  function startLeadEdit_(id) {
+    const lead = (App.leads || []).find(l => String(l.id) === String(id));
+    if (!lead) return;
+    App.editingLead = lead.id;
+    if ($('leadDate')) $('leadDate').value = lead.date || '';
+    setLeadSelectValue_('leadCampaign', lead.campaign_id);
+    setLeadSelectValue_('leadPlatform', lead.platform);
+    if ($('leadName')) $('leadName').value = lead.name || '';
+    if ($('leadContact')) $('leadContact').value = lead.contact || '';
+    setLeadSelectValue_('leadService', lead.service);
+    setLeadSelectValue_('leadOfferType', lead.offerType);
+    setLeadSelectValue_('leadProfile', lead.profile);
+    setLeadSelectValue_('leadStatus', lead.status);
+    setLeadSelectValue_('leadLossReason', lead.lossReason);
+    if ($('leadResponsible')) $('leadResponsible').value = lead.responsible || '';
+    if ($('leadNextAction')) $('leadNextAction').value = lead.nextAction || '';
+    if ($('leadNextContactDate')) $('leadNextContactDate').value = lead.nextContactDate || '';
+    if ($('leadPaidValue')) $('leadPaidValue').value = lead.paidValue || '';
+    if ($('leadNotes')) $('leadNotes').value = lead.notes || '';
+    const cancel = $('leadCancelEditBtn');
+    if (cancel) cancel.hidden = false;
+    const btn = $('leadSaveBtn');
+    if (btn) btn.textContent = 'Actualizar lead';
+    document.getElementById('leadForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function setLeadSelectValue_(id, value) {
+    const sel = $(id);
+    if (!sel) return;
+    const v = String(value || '');
+    if (v && !Array.from(sel.options).some(o => o.value === v)) {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      sel.appendChild(opt);
+    }
+    sel.value = v;
+  }
+
+  function getLeadFilters_() {
+    return {
+      campaign_id: $('leadFilterCampaign')?.value || '',
+      platform: $('leadFilterPlatform')?.value || '',
+      service: $('leadFilterService')?.value || '',
+      offerType: $('leadFilterOfferType')?.value || '',
+      status: $('leadFilterStatus')?.value || '',
+      responsible: $('leadFilterResponsible')?.value || '',
+    };
+  }
+
+  async function refreshLeads_() {
+    if (!API?.listLeads) return;
+    const res = await safeCall_(() => API.listLeads());
+    if (!res?.ok) {
+      UIx.toast(res?.error || 'No se pudieron cargar los leads', 'error');
+      return;
+    }
+    App.leads = res.rows || [];
+    fillLeadCampaignSelects_();
+    renderLeadsTable_();
+  }
+
+  function renderLeadsTable_() {
+    const host = $('leadsTable');
+    if (!host) return;
+    const f = getLeadFilters_();
+    const resp = f.responsible.toLowerCase();
+    const rows = (App.leads || []).filter(l => {
+      if (f.campaign_id && l.campaign_id !== f.campaign_id) return false;
+      if (f.platform && l.platform !== f.platform) return false;
+      if (f.service && l.service !== f.service) return false;
+      if (f.offerType && l.offerType !== f.offerType) return false;
+      if (f.status && l.status !== f.status) return false;
+      if (resp && !String(l.responsible || '').toLowerCase().includes(resp)) return false;
+      return true;
+    });
+
+    if (!rows.length) {
+      host.innerHTML = '<p class="muted">No hay leads con estos filtros. Registra el primero en el formulario de la izquierda.</p>';
+      return;
+    }
+
+    const nameFor = (id) => {
+      const c = (App.campaigns || []).find(x => String(x.campaign_id) === String(id));
+      return c ? (c.nombre || c.campaign_id) : (id ? '(campaña eliminada)' : 'Directo');
+    };
+
+    const body = rows.map(l => `
+      <tr>
+        <td>${formatShortDate_(l.date)}</td>
+        <td>
+          <div style="font-weight:600">${escapeHtml(l.name || 'Sin nombre')}</div>
+          ${l.contact ? `<div class="muted" style="font-size:12px">${escapeHtml(l.contact)}</div>` : ''}
+          ${l.profile ? `<div class="muted" style="font-size:12px">${escapeHtml(l.profile)}</div>` : ''}
+        </td>
+        <td>
+          <div>${escapeHtml(nameFor(l.campaign_id))}</div>
+          ${l.platform ? `<div class="muted" style="font-size:12px">${escapeHtml(l.platform)}</div>` : ''}
+        </td>
+        <td>
+          <div>${escapeHtml(l.service || '-')}</div>
+          ${l.offerType ? `<div class="muted" style="font-size:12px">${escapeHtml(l.offerType)}</div>` : ''}
+        </td>
+        <td>
+          <span class="lead-status">${escapeHtml(l.status || 'Lead nuevo')}</span>
+          ${l.status === 'Perdido' && l.lossReason ? `<div class="muted" style="font-size:12px">${escapeHtml(l.lossReason)}</div>` : ''}
+        </td>
+        <td>
+          ${l.nextAction ? escapeHtml(l.nextAction) : '<span class="muted">-</span>'}
+          ${l.nextContactDate ? `<div class="muted" style="font-size:12px">${formatShortDate_(l.nextContactDate)}</div>` : ''}
+        </td>
+        <td style="text-align:right">${parseNum(l.paidValue) > 0 ? moneyCOP(l.paidValue) : '<span class="muted">-</span>'}</td>
+        <td style="text-align:right"><button class="btn-mini" data-action="edit-lead" data-id="${escapeHtml(l.id)}">Editar</button></td>
+      </tr>
+    `).join('');
+
+    host.innerHTML = `
+      <div class="lead-summary muted">${rows.length} lead(s)</div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Contacto</th>
+            <th>Campaña / plataforma</th>
+            <th>Servicio / oferta</th>
+            <th>Estado</th>
+            <th>Próxima acción</th>
+            <th style="text-align:right">Valor</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    `;
+
+    host.querySelectorAll('button[data-action="edit-lead"]').forEach(btn => {
+      btn.addEventListener('click', () => startLeadEdit_(btn.getAttribute('data-id') || ''));
+    });
+  }
+
+  // ---------- VISTAS ESTRATEGICAS (Servicios / Embudo / Presupuesto) ----------
+  const LEAD_STAGE_ORDER = ['Lead nuevo', 'Contactado', 'Respondió', 'Calificado', 'Clase de prueba agendada', 'Asistió a prueba', 'Matrícula', 'Pagó'];
+  const FUNNEL_STEPS = [
+    { label: 'Leads', min: 0 },
+    { label: 'Contactados', min: 1 },
+    { label: 'Calificados', min: 3 },
+    { label: 'Prueba agendada', min: 4 },
+    { label: 'Asistió a prueba', min: 5 },
+    { label: 'Matrículas', min: 6 },
+    { label: 'Pagos', min: 7 },
+  ];
+
+  function leadStageIndex_(status) {
+    if (String(status || '') === 'Perdido') return 0;
+    const i = LEAD_STAGE_ORDER.indexOf(String(status || ''));
+    return i < 0 ? 0 : i;
+  }
+
+  function pctText_(part, whole) {
+    const w = parseNum(whole);
+    if (!w) return 'no medible';
+    return `${Math.round((parseNum(part) / w) * 100)}%`;
+  }
+
+  function wireStrategicViews_() {
+    const funnelInputs = ['funnelFilterCampaign', 'funnelFilterPlatform', 'funnelFilterService', 'funnelFilterOfferType', 'funnelFilterFrom', 'funnelFilterTo'];
+    funnelInputs.forEach(id => {
+      const el = $(id);
+      if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', renderFunnel_);
+    });
+    const clr = $('funnelFilterClear');
+    if (clr) clr.addEventListener('click', () => {
+      funnelInputs.forEach(id => { const el = $(id); if (el) el.value = ''; });
+      renderFunnel_();
+    });
+    const saveDist = $('budgetDistributionSave');
+    if (saveDist) saveDist.addEventListener('click', onSaveBudgetDistribution_);
+  }
+
+  // ----- SERVICIOS -----
+  async function refreshServices_() {
+    const leadsRes = API?.listLeads ? await safeCall_(() => API.listLeads()) : null;
+    if (leadsRes?.ok) App.leads = leadsRes.rows || [];
+    const dash = API?.dashboard ? await safeCall_(() => API.dashboard({})) : null;
+    const rows = dash?.ok ? (dash.rows || []) : [];
+    renderServices_(App.leads || [], App.campaigns || [], rows);
+  }
+
+  function renderServices_(leads, campaigns, dashRows) {
+    const host = $('servicesTable');
+    if (!host) return;
+
+    const spendByCampaign = new Map(dashRows.map(r => [String(r.campaign_id || r.id || ''), parseNum(r.spend)]));
+    const map = new Map();
+    const ensure = (name) => {
+      const key = name || 'Sin clasificar';
+      if (!map.has(key)) map.set(key, { service: key, leads: 0, contacts: 0, qualified: 0, trials: 0, enrollments: 0, paid: 0, revenue: 0, spend: 0, byCampaign: new Map(), byPlatform: new Map() });
+      return map.get(key);
+    };
+    const bump = (m, k) => { if (k) m.set(k, (m.get(k) || 0) + 1); };
+
+    leads.forEach(l => {
+      const s = ensure(l.service);
+      const idx = leadStageIndex_(l.status);
+      s.leads += 1;
+      if (idx >= 1) s.contacts += 1;
+      if (idx >= 3) s.qualified += 1;
+      if (idx >= 4) s.trials += 1;
+      if (idx >= 6) s.enrollments += 1;
+      if (idx >= 7) s.paid += 1;
+      s.revenue += parseNum(l.paidValue);
+      bump(s.byCampaign, l.campaign_id);
+      bump(s.byPlatform, l.platform);
+    });
+
+    campaigns.forEach(c => {
+      if (!c.servicio) return;
+      const s = ensure(c.servicio);
+      s.spend += spendByCampaign.get(String(c.campaign_id)) || 0;
+    });
+
+    const stats = Array.from(map.values()).sort((a, b) => b.leads - a.leads || b.spend - a.spend);
+    if (!stats.length) {
+      host.innerHTML = '<div class="insight-alert warning">Faltan datos: aún no hay leads registrados ni campañas clasificadas por servicio.</div>';
+      return;
+    }
+
+    const nameFor = (id) => {
+      const c = (campaigns || []).find(x => String(x.campaign_id) === String(id));
+      return c ? (c.nombre || c.campaign_id) : id;
+    };
+    const topOf = (m, resolver) => {
+      let best = '', bestN = 0;
+      for (const [k, n] of m.entries()) { if (n > bestN) { bestN = n; best = k; } }
+      return best ? (resolver ? resolver(best) : best) : '-';
+    };
+
+    const body = stats.map(s => {
+      const cpe = s.spend > 0 && s.enrollments > 0 ? moneyCOP(s.spend / s.enrollments) : '<span class="muted">no medible</span>';
+      const topSrc = s.byCampaign.size ? topOf(s.byCampaign, nameFor) : topOf(s.byPlatform);
+      return `
+        <tr>
+          <td style="font-weight:600">${escapeHtml(s.service)}</td>
+          <td style="text-align:right">${intFmt(s.leads)}</td>
+          <td style="text-align:right">${intFmt(s.contacts)}</td>
+          <td style="text-align:right">${intFmt(s.qualified)}</td>
+          <td style="text-align:right">${intFmt(s.trials)}</td>
+          <td style="text-align:right">${intFmt(s.enrollments)}</td>
+          <td style="text-align:right">${s.revenue > 0 ? moneyCOP(s.revenue) : '<span class="muted">-</span>'}</td>
+          <td style="text-align:right">${s.spend > 0 ? moneyCOP(s.spend) : '<span class="muted">-</span>'}</td>
+          <td style="text-align:right">${cpe}</td>
+          <td>${escapeHtml(topSrc)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    host.innerHTML = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Servicio</th>
+            <th style="text-align:right">Leads</th>
+            <th style="text-align:right">Contactos</th>
+            <th style="text-align:right">Calificados</th>
+            <th style="text-align:right">Pruebas</th>
+            <th style="text-align:right">Matrículas</th>
+            <th style="text-align:right">Ingreso</th>
+            <th style="text-align:right">Gasto</th>
+            <th style="text-align:right">Costo/matrícula</th>
+            <th>Más lo trae</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+      <p class="form-help">Contactos = leads que respondieron o avanzaron. "No medible" aparece cuando falta gasto o matrículas para el cálculo.</p>
+    `;
+  }
+
+  // ----- EMBUDO -----
+  async function refreshFunnel_() {
+    if (API?.listLeads) {
+      const res = await safeCall_(() => API.listLeads());
+      if (res?.ok) App.leads = res.rows || [];
+    }
+    renderFunnel_();
+  }
+
+  function renderFunnel_() {
+    const host = $('funnelStages');
+    if (!host) return;
+    const f = {
+      campaign: $('funnelFilterCampaign')?.value || '',
+      platform: $('funnelFilterPlatform')?.value || '',
+      service: $('funnelFilterService')?.value || '',
+      offer: $('funnelFilterOfferType')?.value || '',
+      from: $('funnelFilterFrom')?.value || '',
+      to: $('funnelFilterTo')?.value || '',
+    };
+    const leads = (App.leads || []).filter(l => {
+      if (f.campaign && l.campaign_id !== f.campaign) return false;
+      if (f.platform && l.platform !== f.platform) return false;
+      if (f.service && l.service !== f.service) return false;
+      if (f.offer && l.offerType !== f.offer) return false;
+      if (f.from && String(l.date) < f.from) return false;
+      if (f.to && String(l.date) > f.to) return false;
+      return true;
+    });
+
+    if (!leads.length) {
+      host.innerHTML = '<div class="insight-alert warning">Faltan datos: no hay leads que cumplan estos filtros. Registra leads en la pestaña Leads o ajusta los filtros.</div>';
+      return;
+    }
+
+    const counts = FUNNEL_STEPS.map(s => leads.filter(l => leadStageIndex_(l.status) >= s.min).length);
+    const top = counts[0] || 1;
+    const rows = FUNNEL_STEPS.map((s, i) => {
+      const width = Math.max(2, Math.round((counts[i] / top) * 100));
+      const conv = i === 0 ? '' : `<span class="funnel-rate">${pctText_(counts[i], counts[i - 1])} desde ${FUNNEL_STEPS[i - 1].label.toLowerCase()}</span>`;
+      return `
+        <div class="funnel-row">
+          <div class="funnel-label">${escapeHtml(s.label)}</div>
+          <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:${width}%"></div></div>
+          <div class="funnel-value">${intFmt(counts[i])} ${conv}</div>
+        </div>
+      `;
+    }).join('');
+
+    host.innerHTML = `
+      <div class="funnel-chart">${rows}</div>
+      <p class="form-help">Cada etapa cuenta los leads que alcanzaron ese punto o más. Los leads marcados "Perdido" cuentan solo como lead.</p>
+    `;
+  }
+
+  // ----- PRESUPUESTO -----
+  async function refreshBudget_() {
+    // El simulador debe poder usarse aun mientras Firebase carga o sin datos guardados.
+    if (!Array.isArray(App.budgetDistribution) || !App.budgetDistribution.length) {
+      App.budgetDistribution = DEFAULT_BUDGET_DISTRIBUTION_.map(x => ({ ...x }));
+      App.budgetPlannerTotal = App.budgetDistribution.reduce((acc, x) => acc + parseNum(x.amount), 0);
+    }
+    drawBudgetDistribution_();
+    const now = new Date();
+    const from = toISODate(new Date(now.getFullYear(), now.getMonth(), 1));
+    const to = toISODate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+    const dash = API?.dashboard ? await safeCall_(() => API.dashboard({ from, to })) : null;
+    const settingsRes = API?.getMarketingSettings ? await safeCall_(() => API.getMarketingSettings()) : null;
+    const d = dash?.ok ? dash : { totals: {}, rows: [] };
+    const settings = settingsRes?.ok ? (settingsRes.settings || {}) : {};
+    renderBudgetSummary_(d.totals || {});
+    renderBudgetRisks_(d.rows || [], d.totals || {}, settings);
+    renderBudgetDistribution_(settings);
+  }
+
+  function renderBudgetSummary_(totals) {
+    const host = $('budgetSummary');
+    if (!host) return;
+    const max = parseNum(totals.global_max_budget) || parseNum(totals.budget_monthly_target);
+    const spend = parseNum(totals.spend);
+    const remaining = Math.max(0, max - spend);
+    const pct = max ? Math.round((spend / max) * 100) : 0;
+    host.innerHTML = `
+      <div class="kpi-grid">
+        <div class="kpi-item"><span>Presupuesto máximo mensual</span><strong>${max ? moneyCOP(max) : '<span class="muted">sin definir</span>'}</strong></div>
+        <div class="kpi-item"><span>Inversión registrada</span><strong>${moneyCOP(spend)}</strong></div>
+        <div class="kpi-item"><span>Presupuesto restante</span><strong>${max ? moneyCOP(remaining) : 'no medible'}</strong></div>
+        <div class="kpi-item"><span>Porcentaje usado</span><strong>${max ? pct + '%' : 'no medible'}</strong></div>
+      </div>
+      ${!max ? '<div class="insight-alert info">Define el presupuesto máximo mensual en Configuración o desde el control de presupuesto del Dashboard.</div>' : ''}
+      ${max && pct >= 100 ? '<div class="insight-alert danger">El gasto supera el presupuesto máximo mensual.</div>' : ''}
+      ${max && pct >= 80 && pct < 100 ? '<div class="insight-alert warning">El gasto ya supera el 80% del presupuesto mensual.</div>' : ''}
+    `;
+  }
+
+  function renderBudgetRisks_(rows, totals, settings) {
+    const host = $('budgetRisks');
+    if (!host) return;
+    const max = parseNum(totals.global_max_budget) || parseNum(totals.budget_monthly_target);
+    const cplTarget = parseNum(settings.defaultCplTarget) || 4500;
+    const nameFor = (r) => escapeHtml(r.nombre || r.name || r.campaign_id || '');
+
+    const groups = [];
+    const overShare = rows.filter(r => max > 0 && parseNum(r.spend) / max > 0.4);
+    if (overShare.length) groups.push(['danger', 'Superan el 40% del presupuesto mensual', overShare.map(r => `${nameFor(r)} — ${moneyCOP(r.spend)} (${Math.round(parseNum(r.spend) / max * 100)}%)`)]);
+
+    const spendNoReality = rows.filter(r => parseNum(r.spend) > 0 && parseNum(r.real_new_contacts) === 0 && parseNum(r.real_enrollments) === 0);
+    if (spendNoReality.length) groups.push(['warning', 'Con gasto pero sin realidad comercial', spendNoReality.map(r => `${nameFor(r)} — ${moneyCOP(r.spend)}`)]);
+
+    const leadsNoEnroll = rows.filter(r => parseNum(r.leads) >= 10 && parseNum(r.real_enrollments) === 0);
+    if (leadsNoEnroll.length) groups.push(['warning', 'Muchos leads pero sin matrículas', leadsNoEnroll.map(r => `${nameFor(r)} — ${intFmt(r.leads)} leads`)]);
+
+    const lowCplNoTracking = rows.filter(r => parseNum(r.cpl) > 0 && parseNum(r.cpl) <= cplTarget && parseNum(r.real_new_contacts) === 0);
+    if (lowCplNoTracking.length) groups.push(['info', 'CPL bajo pero sin seguimiento real', lowCplNoTracking.map(r => `${nameFor(r)} — CPL ${moneyCOP(r.cpl)}`)]);
+
+    if (!groups.length) {
+      host.innerHTML = '<p class="muted">Sin alertas de presupuesto con los datos actuales.</p>';
+      return;
+    }
+    host.innerHTML = groups.map(([tone, title, items]) => `
+      <div class="insight-alert ${tone}">
+        <strong>${escapeHtml(title)}</strong>
+        <ul class="risk-list">${items.map(i => `<li>${i}</li>`).join('')}</ul>
+      </div>
+    `).join('');
+  }
+
+  function renderBudgetDistribution_(settings) {
+    const host = $('budgetDistribution');
+    if (!host) return;
+    const stored = Array.isArray(settings.budgetDistribution) && settings.budgetDistribution.length ? settings.budgetDistribution : null;
+    App.budgetDistribution = (stored || DEFAULT_BUDGET_DISTRIBUTION_).map(x => ({ label: String(x.label || ''), amount: parseNum(x.amount) }));
+    App.budgetPlannerTotal = App.budgetDistribution.reduce((acc, x) => acc + parseNum(x.amount), 0) || 3000000;
+    drawBudgetDistribution_();
+  }
+
+  const DEFAULT_BUDGET_DISTRIBUTION_ = [
+    { label: 'Meta general Musicala', amount: 900000 },
+    { label: 'Google búsqueda específica o controlada', amount: 750000 },
+    { label: 'Meta talleres / temporada', amount: 600000 },
+    { label: 'Remarketing / rescate', amount: 300000 },
+    { label: 'Bolsa de prueba', amount: 300000 },
+    { label: 'Reserva de optimización', amount: 150000 },
+  ];
+
+  function drawBudgetDistribution_() {
+    const host = $('budgetDistribution');
+    if (!host) return;
+    const list = App.budgetDistribution || [];
+    const plannedTotal = Math.max(0, parseNum(App.budgetPlannerTotal));
+    const allocated = list.reduce((acc, x) => acc + parseNum(x.amount), 0);
+    const allocatedPct = plannedTotal ? (allocated / plannedTotal) * 100 : 0;
+    const difference = plannedTotal - allocated;
+    const palette = ['#7c3aed', '#2563eb', '#0891b2', '#059669', '#d97706', '#dc2626', '#db2777', '#64748b'];
+    const segments = list.map((x, i) => {
+      const pct = plannedTotal ? Math.max(0, parseNum(x.amount) / plannedTotal * 100) : 0;
+      return `<span class="budget-allocation-segment" style="width:${Math.min(pct, 100)}%;background:${palette[i % palette.length]}" title="${escapeHtml(x.label || 'Sin nombre')}: ${pct.toFixed(1)}%"></span>`;
+    }).join('');
+    const rows = list.map((x, i) => `
+      <tr>
+        <td><span class="budget-allocation-dot" style="background:${palette[i % palette.length]}"></span><input type="text" class="dist-label" data-index="${i}" value="${escapeHtml(x.label)}" placeholder="Ej: Meta Ads" /></td>
+        <td><div class="budget-percent-input"><input type="number" class="dist-percent" data-index="${i}" min="0" step="0.1" value="${plannedTotal ? (parseNum(x.amount) / plannedTotal * 100).toFixed(1) : '0.0'}" /><span>%</span></div></td>
+        <td><div class="budget-money-input"><span>$</span><input type="number" class="dist-amount" data-index="${i}" min="0" step="1000" value="${parseNum(x.amount)}" /></div></td>
+        <td style="text-align:right"><button type="button" class="btn-mini danger dist-remove" data-index="${i}">Quitar</button></td>
+      </tr>
+    `).join('');
+    host.innerHTML = `
+      <div class="budget-planner-head">
+        <label>Presupuesto que quieres repartir
+          <div class="budget-total-input"><span>$</span><input id="budgetPlannerTotal" type="number" min="0" step="1000" value="${plannedTotal}" /></div>
+        </label>
+        <div class="budget-planner-kpis">
+          <div><span>Asignado</span><strong>${moneyCOP(allocated)}</strong></div>
+          <div><span>Distribuido</span><strong>${allocatedPct.toFixed(1)}%</strong></div>
+          <div class="${difference < 0 ? 'is-over' : difference > 0 ? 'is-pending' : 'is-complete'}"><span>${difference < 0 ? 'Excedente' : 'Por asignar'}</span><strong>${moneyCOP(Math.abs(difference))}</strong></div>
+        </div>
+      </div>
+      <div class="budget-allocation-track" aria-label="Distribución visual del presupuesto">${segments}</div>
+      <div class="budget-allocation-status ${difference < 0 ? 'is-over' : difference > 0 ? 'is-pending' : 'is-complete'}">
+        ${difference < 0 ? `Te pasaste ${Math.abs(100 - allocatedPct).toFixed(1)}% del presupuesto de prueba.` : difference > 0 ? `Todavía puedes repartir ${moneyCOP(difference)} (${Math.max(0, 100 - allocatedPct).toFixed(1)}%).` : 'Listo: repartiste el 100% del presupuesto.'}
+      </div>
+      <div class="table-wrap budget-distribution-table"><table class="data-table">
+        <thead><tr><th>Destino</th><th>Porcentaje</th><th>Dinero</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><th>Total asignado</th><th>${allocatedPct.toFixed(1)}%</th><th>${moneyCOP(allocated)}</th><th></th></tr></tfoot>
+      </table></div>
+      <button type="button" class="btn-mini dist-add">+ Agregar concepto</button>
+    `;
+
+    $('budgetPlannerTotal')?.addEventListener('change', (event) => {
+      App.budgetPlannerTotal = parseNum(event.target.value);
+      drawBudgetDistribution_();
+    });
+    host.querySelectorAll('.dist-label').forEach(el => el.addEventListener('input', () => {
+      App.budgetDistribution[Number(el.dataset.index)].label = el.value;
+    }));
+    host.querySelectorAll('.dist-percent').forEach(el => el.addEventListener('change', () => {
+      App.budgetDistribution[Number(el.dataset.index)].amount = plannedTotal * Math.max(0, parseNum(el.value)) / 100;
+      drawBudgetDistribution_();
+    }));
+    host.querySelectorAll('.dist-amount').forEach(el => el.addEventListener('change', () => {
+      App.budgetDistribution[Number(el.dataset.index)].amount = parseNum(el.value);
+      drawBudgetDistribution_();
+    }));
+    host.querySelectorAll('.dist-remove').forEach(el => el.addEventListener('click', () => {
+      App.budgetDistribution.splice(Number(el.dataset.index), 1);
+      drawBudgetDistribution_();
+    }));
+    host.querySelector('.dist-add')?.addEventListener('click', () => {
+      App.budgetDistribution.push({ label: '', amount: 0 });
+      drawBudgetDistribution_();
+    });
+  }
+
+  async function onSaveBudgetDistribution_() {
+    const btn = $('budgetDistributionSave');
+    if (!API?.saveBudgetDistribution) {
+      UIx.toast('No se pudo guardar: API no disponible', 'error');
+      return;
+    }
+    setButtonLoading(btn, true, 'Guardando...');
+    try {
+      const res = await safeCall_(() => API.saveBudgetDistribution(App.budgetDistribution || []));
+      if (!res?.ok) {
+        UIx.toast(res?.error || 'No se pudo guardar la distribución', 'error');
+        return;
+      }
+      UIx.toast('Distribución guardada', 'success');
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  }
+
+  // ----- DASHBOARD ESTRATEGICO (ideas, demanda, datos incompletos) -----
+  async function renderStrategicDashboard_(res) {
+    const rows = res?.rows || [];
+    const totals = res?.totals || {};
+    if (API?.listLeads) {
+      const r = await safeCall_(() => API.listLeads());
+      if (r?.ok) App.leads = r.rows || [];
+    }
+    const leads = App.leads || [];
+    renderDemandList_('demandByService', leads, 'service', 'Sin servicio clasificado');
+    renderDemandList_('demandByOffer', leads, 'offerType', 'Sin tipo de oferta');
+    renderIncompleteData_(rows, leads);
+    renderUpcomingLeadActions_(leads);
+    renderStrategicIdeas_(rows, leads, totals);
+  }
+
+  function countBy_(items, field) {
+    const map = new Map();
+    items.forEach(it => {
+      const k = String(it[field] || '').trim();
+      if (!k) return;
+      map.set(k, (map.get(k) || 0) + 1);
+    });
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }
+
+  function renderDemandList_(hostId, leads, field, emptyLabel) {
+    const host = $(hostId);
+    if (!host) return;
+    if (!leads.length) {
+      host.innerHTML = '<p class="muted">Faltan datos: aún no hay leads registrados.</p>';
+      return;
+    }
+    const ranked = countBy_(leads, field);
+    const missing = leads.filter(l => !String(l[field] || '').trim()).length;
+    if (!ranked.length) {
+      host.innerHTML = `<p class="muted">${escapeHtml(emptyLabel)} en todos los leads.</p>`;
+      return;
+    }
+    const top = ranked[0][1] || 1;
+    host.innerHTML = `
+      <div class="demand-list">
+        ${ranked.slice(0, 6).map(([name, n]) => `
+          <div class="demand-row">
+            <span class="demand-name">${escapeHtml(name)}</span>
+            <span class="demand-bar-wrap"><span class="demand-bar" style="width:${Math.max(4, Math.round(n / top * 100))}%"></span></span>
+            <span class="demand-count">${intFmt(n)}</span>
+          </div>
+        `).join('')}
+      </div>
+      ${missing ? `<p class="form-help">${intFmt(missing)} lead(s) sin clasificar en este campo.</p>` : ''}
+    `;
+  }
+
+  function renderIncompleteData_(rows, leads) {
+    const host = $('incompleteData');
+    if (!host) return;
+    const items = [];
+
+    const unclassified = rows.filter(r => !String(r.servicio || '').trim() || !String(r.tipo_oferta || '').trim());
+    if (unclassified.length) items.push(['warning', `${intFmt(unclassified.length)} campaña(s) sin servicio o tipo de oferta`, unclassified.slice(0, 5).map(r => escapeHtml(r.nombre || r.name || r.campaign_id))]);
+
+    const noBudget = rows.filter(r => !parseNum(r.monthly_budget_target) && !parseNum(r.presupuesto_mensual));
+    if (noBudget.length) items.push(['info', `${intFmt(noBudget.length)} campaña(s) sin presupuesto máximo definido`, noBudget.slice(0, 5).map(r => escapeHtml(r.nombre || r.name || r.campaign_id))]);
+
+    const leadsNoService = leads.filter(l => !String(l.service || '').trim()).length;
+    if (leadsNoService) items.push(['warning', `Hay ${intFmt(leadsNoService)} lead(s) sin servicio clasificado`, []]);
+
+    const leadsNoOffer = leads.filter(l => !String(l.offerType || '').trim()).length;
+    if (leadsNoOffer) items.push(['info', `Hay ${intFmt(leadsNoOffer)} registro(s) sin tipo de oferta`, []]);
+
+    const enrollNoCampaign = leads.filter(l => ['Matrícula', 'Pagó'].includes(l.status) && !String(l.campaign_id || '').trim()).length;
+    if (enrollNoCampaign) items.push(['danger', `Hay ${intFmt(enrollNoCampaign)} matrícula(s) sin campaña origen`, []]);
+
+    if (!items.length) {
+      host.innerHTML = '<p class="muted">Todo clasificado. Sin brechas de medición detectadas.</p>';
+      return;
+    }
+    host.innerHTML = items.map(([tone, title, list]) => `
+      <div class="insight-alert ${tone}">
+        <strong>${title}</strong>
+        ${list.length ? `<ul class="risk-list">${list.map(i => `<li>${i}</li>`).join('')}</ul>` : ''}
+      </div>
+    `).join('');
+  }
+
+  function renderUpcomingLeadActions_(leads) {
+    const host = $('upcomingLeadActions');
+    if (!host) return;
+    const today = toISODate(new Date());
+    const pending = leads
+      .filter(l => String(l.nextContactDate || '').trim() && !['Pagó', 'Perdido'].includes(l.status))
+      .sort((a, b) => String(a.nextContactDate).localeCompare(String(b.nextContactDate)))
+      .slice(0, 8);
+    if (!pending.length) {
+      host.innerHTML = '<p class="muted">No hay próximas acciones agendadas en leads.</p>';
+      return;
+    }
+    const nameFor = (id) => {
+      const c = (App.campaigns || []).find(x => String(x.campaign_id) === String(id));
+      return c ? (c.nombre || c.campaign_id) : (id || 'Directo');
+    };
+    host.innerHTML = `
+      <ul class="action-list">
+        ${pending.map(l => {
+          const overdue = String(l.nextContactDate) < today;
+          return `<li class="${overdue ? 'action-overdue' : ''}">
+            <strong>${formatShortDate_(l.nextContactDate)}</strong> · ${escapeHtml(l.name || 'Lead')} — ${escapeHtml(l.nextAction || 'Seguimiento')}
+            <span class="muted">(${escapeHtml(nameFor(l.campaign_id))})</span>
+            ${overdue ? '<span class="lead-status" style="background:#fee2e2">vencida</span>' : ''}
+          </li>`;
+        }).join('')}
+      </ul>
+    `;
+  }
+
+  function renderStrategicIdeas_(rows, leads, totals) {
+    const host = $('strategicIdeas');
+    if (!host) return;
+    const ideas = [];
+    const cplTarget = parseNum(App.dashboard?.settings?.defaultCplTarget) || 4500;
+
+    // Servicios con mucha demanda -> anuncio especifico.
+    countBy_(leads, 'service').filter(([, n]) => n >= 5).slice(0, 3).forEach(([svc, n]) => {
+      ideas.push(['good', `"${svc}" tiene ${n} leads: considera un anuncio específico dentro de una campaña general.`]);
+    });
+
+    // Servicios con muchos leads pero pocas matriculas.
+    const byService = new Map();
+    leads.forEach(l => {
+      const s = l.service || '';
+      if (!s) return;
+      const acc = byService.get(s) || { leads: 0, enroll: 0 };
+      acc.leads += 1;
+      if (['Matrícula', 'Pagó'].includes(l.status)) acc.enroll += 1;
+      byService.set(s, acc);
+    });
+    for (const [svc, acc] of byService.entries()) {
+      if (acc.leads >= 8 && acc.enroll === 0) ideas.push(['watch', `"${svc}" trae leads pero sin matrículas: revisa oferta, horarios, precio o seguimiento.`]);
+    }
+
+    // Campanas: bajo CPL sin realidad -> seguir midiendo.
+    rows.filter(r => parseNum(r.cpl) > 0 && parseNum(r.cpl) <= cplTarget && parseNum(r.real_new_contacts) === 0)
+      .slice(0, 3).forEach(r => ideas.push(['watch', `"${r.nombre || r.name || r.campaign_id}" tiene CPL bajo pero sin realidad comercial: sigue midiendo antes de escalar.`]));
+
+    // Campanas: alto gasto y pocos leads -> pausar u optimizar.
+    rows.filter(r => parseNum(r.spend) >= 30000 && parseNum(r.leads) < 3)
+      .slice(0, 3).forEach(r => ideas.push(['bad', `"${r.nombre || r.name || r.campaign_id}" gasta con pocos leads: considera pausar u optimizar.`]));
+
+    // Meta con bajo CPL -> usarla para generales/talleres.
+    const metaRows = rows.filter(r => String(r.plataforma || r.canal || r.platform || '').toLowerCase().includes('meta'));
+    const metaAvgCpl = avgCpl_(metaRows);
+    if (metaAvgCpl > 0 && metaAvgCpl <= cplTarget) ideas.push(['good', 'Meta muestra CPL bajo: buena opción para campañas generales, talleres, temporada y marca.']);
+
+    // Google presente -> usar para busquedas especificas.
+    if (rows.some(r => String(r.plataforma || r.canal || r.platform || '').toLowerCase().includes('google'))) {
+      ideas.push(['neutral', 'Google conviene enfocarlo a búsquedas específicas y evaluarlo por intención y calidad, no solo por CPL.']);
+    }
+
+    // Falta de datos para escalar.
+    if (parseNum(totals.spend) > 0 && parseNum(totals.real_new_contacts) === 0) {
+      ideas.push(['watch', 'No hay datos suficientes para decidir escalar: registra realidad comercial (contactos, pruebas, matrículas).']);
+    }
+
+    if (!ideas.length) {
+      host.innerHTML = '<p class="muted">Sin sugerencias por ahora. A medida que registres leads y realidad comercial aparecerán ideas.</p>';
+      return;
+    }
+    host.innerHTML = `
+      <div class="quick-read-list">
+        ${ideas.map(([tone, text]) => `<div class="quick-read-item ${tone}"><span>${escapeHtml(text)}</span></div>`).join('')}
+      </div>
+      <p class="form-help">Son sugerencias basadas en reglas, no decisiones absolutas.</p>
+    `;
+  }
+
+  function avgCpl_(rows) {
+    const valid = rows.filter(r => parseNum(r.cpl) > 0);
+    if (!valid.length) return 0;
+    return valid.reduce((acc, r) => acc + parseNum(r.cpl), 0) / valid.length;
   }
 
   function parseLocalDateFallback_(value) {
