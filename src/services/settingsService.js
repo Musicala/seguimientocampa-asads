@@ -110,7 +110,11 @@ export const DEFAULT_BUDGET_DISTRIBUTION = [
 export async function setBudgetDistribution(list) {
   const clean = Array.isArray(list)
     ? list
-        .map((item) => ({ label: String(item?.label || "").trim(), amount: Number(item?.amount) || 0 }))
+        .map((item) => ({
+          label: String(item?.label || "").trim(),
+          percent: Math.max(0, Number(item?.percent) || 0),
+          amount: Number(item?.amount) || 0,
+        }))
         .filter((item) => item.label)
     : [];
   await setDoc(

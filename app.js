@@ -2862,8 +2862,19 @@
     const host = $('budgetDistribution');
     if (!host) return;
     const stored = Array.isArray(settings.budgetDistribution) && settings.budgetDistribution.length ? settings.budgetDistribution : null;
-    App.budgetDistribution = (stored || DEFAULT_BUDGET_DISTRIBUTION_).map(x => ({ label: String(x.label || ''), amount: parseNum(x.amount) }));
-    App.budgetPlannerTotal = App.budgetDistribution.reduce((acc, x) => acc + parseNum(x.amount), 0) || 3000000;
+    const source = stored || DEFAULT_BUDGET_DISTRIBUTION_;
+    const sourceTotal = source.reduce((acc, x) => acc + parseNum(x.amount), 0) || 3000000;
+    App.budgetPlannerTotal = parseNum(App.budgetPlannerTotal) || sourceTotal;
+    App.budgetDistribution = source.map(x => {
+      const amount = parseNum(x.amount);
+      const hasPercent = x.percent !== undefined && x.percent !== null && String(x.percent) !== '';
+      const percent = hasPercent ? Math.max(0, parseNum(x.percent)) : (sourceTotal ? (amount / sourceTotal) * 100 : 0);
+      return {
+        label: String(x.label || ''),
+        percent,
+        amount: App.budgetPlannerTotal ? App.budgetPlannerTotal * percent / 100 : amount,
+      };
+    });
     drawBudgetDistribution_();
   }
 
@@ -2879,11 +2890,16 @@
   function drawBudgetDistribution_() {
     const host = $('budgetDistribution');
     if (!host) return;
+    const plannedTotal = Math.max(0, parseNum(App.budgetPlannerTotal));
     const list = (App.budgetDistribution || [])
-      .map(x => ({ label: String(x.label || ''), amount: Math.max(0, parseNum(x.amount)) }))
+      .map(x => {
+        const amount = Math.max(0, parseNum(x.amount));
+        const hasPercent = x.percent !== undefined && x.percent !== null && String(x.percent) !== '';
+        const percent = hasPercent ? Math.max(0, parseNum(x.percent)) : (plannedTotal ? amount / plannedTotal * 100 : 0);
+        return { label: String(x.label || ''), percent, amount };
+      })
       .sort((a, b) => parseNum(b.amount) - parseNum(a.amount));
     App.budgetDistribution = list;
-    const plannedTotal = Math.max(0, parseNum(App.budgetPlannerTotal));
     const allocated = list.reduce((acc, x) => acc + parseNum(x.amount), 0);
     const allocatedPct = plannedTotal ? (allocated / plannedTotal) * 100 : 0;
     const difference = plannedTotal - allocated;
@@ -2896,7 +2912,7 @@
     const rows = list.map((x, i) => `
       <tr>
         <td><span class="budget-allocation-dot" style="background:${palette[i % palette.length]}"></span><input type="text" class="dist-label" data-index="${i}" value="${escapeHtml(x.label)}" placeholder="Ej: Meta Ads" /></td>
-        <td><div class="budget-percent-input"><input type="number" class="dist-percent" data-index="${i}" min="0" step="0.1" value="${plannedTotal ? (parseNum(x.amount) / plannedTotal * 100).toFixed(1) : '0.0'}" /><span>%</span></div></td>
+        <td><div class="budget-percent-input"><input type="number" class="dist-percent" data-index="${i}" min="0" step="0.1" value="${parseNum(x.percent).toFixed(1)}" /><span>%</span></div></td>
         <td><div class="budget-money-input"><span>$</span><input type="number" class="dist-amount" data-index="${i}" min="0" step="1000" value="${parseNum(x.amount)}" /></div></td>
         <td style="text-align:right"><button type="button" class="btn-mini danger dist-remove" data-index="${i}">Quitar</button></td>
       </tr>
@@ -2931,18 +2947,28 @@
       redrawTimer = setTimeout(() => drawBudgetDistribution_(), 280);
     };
     $('budgetPlannerTotal')?.addEventListener('input', (event) => {
-      App.budgetPlannerTotal = parseNum(event.target.value);
+      const nextTotal = Math.max(0, parseNum(event.target.value));
+      App.budgetPlannerTotal = nextTotal;
+      App.budgetDistribution = (App.budgetDistribution || []).map(item => ({
+        ...item,
+        amount: nextTotal * Math.max(0, parseNum(item.percent)) / 100,
+      }));
       scheduleRedraw();
     });
     host.querySelectorAll('.dist-label').forEach(el => el.addEventListener('input', () => {
       App.budgetDistribution[Number(el.dataset.index)].label = el.value;
     }));
     host.querySelectorAll('.dist-percent').forEach(el => el.addEventListener('input', () => {
-      App.budgetDistribution[Number(el.dataset.index)].amount = plannedTotal * Math.max(0, parseNum(el.value)) / 100;
+      const percent = Math.max(0, parseNum(el.value));
+      App.budgetDistribution[Number(el.dataset.index)].percent = percent;
+      App.budgetDistribution[Number(el.dataset.index)].amount = Math.max(0, parseNum(App.budgetPlannerTotal)) * percent / 100;
       scheduleRedraw();
     }));
     host.querySelectorAll('.dist-amount').forEach(el => el.addEventListener('input', () => {
-      App.budgetDistribution[Number(el.dataset.index)].amount = parseNum(el.value);
+      const amount = Math.max(0, parseNum(el.value));
+      const total = Math.max(0, parseNum(App.budgetPlannerTotal));
+      App.budgetDistribution[Number(el.dataset.index)].amount = amount;
+      App.budgetDistribution[Number(el.dataset.index)].percent = total ? amount / total * 100 : 0;
       scheduleRedraw();
     }));
     host.querySelectorAll('.dist-remove').forEach(el => el.addEventListener('click', () => {
@@ -2950,7 +2976,7 @@
       drawBudgetDistribution_();
     }));
     host.querySelector('.dist-add')?.addEventListener('click', () => {
-      App.budgetDistribution.push({ label: '', amount: 0 });
+      App.budgetDistribution.push({ label: '', percent: 0, amount: 0 });
       drawBudgetDistribution_();
     });
   }
