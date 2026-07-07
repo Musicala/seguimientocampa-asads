@@ -2879,11 +2879,15 @@
   function drawBudgetDistribution_() {
     const host = $('budgetDistribution');
     if (!host) return;
-    const list = App.budgetDistribution || [];
+    const list = (App.budgetDistribution || [])
+      .map(x => ({ label: String(x.label || ''), amount: Math.max(0, parseNum(x.amount)) }))
+      .sort((a, b) => parseNum(b.amount) - parseNum(a.amount));
+    App.budgetDistribution = list;
     const plannedTotal = Math.max(0, parseNum(App.budgetPlannerTotal));
     const allocated = list.reduce((acc, x) => acc + parseNum(x.amount), 0);
     const allocatedPct = plannedTotal ? (allocated / plannedTotal) * 100 : 0;
     const difference = plannedTotal - allocated;
+    const averageMonthly = allocated;
     const palette = ['#7c3aed', '#2563eb', '#0891b2', '#059669', '#d97706', '#dc2626', '#db2777', '#64748b'];
     const segments = list.map((x, i) => {
       const pct = plannedTotal ? Math.max(0, parseNum(x.amount) / plannedTotal * 100) : 0;
@@ -2905,6 +2909,7 @@
         <div class="budget-planner-kpis">
           <div><span>Asignado</span><strong>${moneyCOP(allocated)}</strong></div>
           <div><span>Distribuido</span><strong>${allocatedPct.toFixed(1)}%</strong></div>
+          <div><span>Promedio mensual</span><strong>${moneyCOP(averageMonthly)}</strong></div>
           <div class="${difference < 0 ? 'is-over' : difference > 0 ? 'is-pending' : 'is-complete'}"><span>${difference < 0 ? 'Excedente' : 'Por asignar'}</span><strong>${moneyCOP(Math.abs(difference))}</strong></div>
         </div>
       </div>
@@ -2913,27 +2918,32 @@
         ${difference < 0 ? `Te pasaste ${Math.abs(100 - allocatedPct).toFixed(1)}% del presupuesto de prueba.` : difference > 0 ? `Todavía puedes repartir ${moneyCOP(difference)} (${Math.max(0, 100 - allocatedPct).toFixed(1)}%).` : 'Listo: repartiste el 100% del presupuesto.'}
       </div>
       <div class="table-wrap budget-distribution-table"><table class="data-table">
-        <thead><tr><th>Destino</th><th>Porcentaje</th><th>Dinero</th><th></th></tr></thead>
+        <thead><tr><th>Destino <span class="muted">/ mayor gasto primero</span></th><th>Porcentaje</th><th>Dinero</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
         <tfoot><tr><th>Total asignado</th><th>${allocatedPct.toFixed(1)}%</th><th>${moneyCOP(allocated)}</th><th></th></tr></tfoot>
       </table></div>
       <button type="button" class="btn-mini dist-add">+ Agregar concepto</button>
     `;
 
-    $('budgetPlannerTotal')?.addEventListener('change', (event) => {
+    let redrawTimer = null;
+    const scheduleRedraw = () => {
+      clearTimeout(redrawTimer);
+      redrawTimer = setTimeout(() => drawBudgetDistribution_(), 280);
+    };
+    $('budgetPlannerTotal')?.addEventListener('input', (event) => {
       App.budgetPlannerTotal = parseNum(event.target.value);
-      drawBudgetDistribution_();
+      scheduleRedraw();
     });
     host.querySelectorAll('.dist-label').forEach(el => el.addEventListener('input', () => {
       App.budgetDistribution[Number(el.dataset.index)].label = el.value;
     }));
-    host.querySelectorAll('.dist-percent').forEach(el => el.addEventListener('change', () => {
+    host.querySelectorAll('.dist-percent').forEach(el => el.addEventListener('input', () => {
       App.budgetDistribution[Number(el.dataset.index)].amount = plannedTotal * Math.max(0, parseNum(el.value)) / 100;
-      drawBudgetDistribution_();
+      scheduleRedraw();
     }));
-    host.querySelectorAll('.dist-amount').forEach(el => el.addEventListener('change', () => {
+    host.querySelectorAll('.dist-amount').forEach(el => el.addEventListener('input', () => {
       App.budgetDistribution[Number(el.dataset.index)].amount = parseNum(el.value);
-      drawBudgetDistribution_();
+      scheduleRedraw();
     }));
     host.querySelectorAll('.dist-remove').forEach(el => el.addEventListener('click', () => {
       App.budgetDistribution.splice(Number(el.dataset.index), 1);
