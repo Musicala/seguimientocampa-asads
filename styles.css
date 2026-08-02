@@ -1612,3 +1612,28 @@ button.cal-otro, .calendar-dot.cal-otro { background: #7f8c8d; }
   .budget-planner-head { grid-template-columns: 1fr; }
   .budget-planner-kpis { grid-template-columns: 1fr; }
 }
+.integration-sync-card{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:1rem;
+  margin:1rem 0;
+  border-color:rgba(12,65,196,.24);
+  background:linear-gradient(135deg, rgba(12,65,196,.07), #fff);
+}
+.integration-sync-card h3{ margin:0 0 .25rem; }
+.integration-sync-card p{ margin:0; }
+.integration-source-badge{
+  display:inline-block;
+  padding:.22rem .5rem;
+  border-radius:999px;
+  color:#0c41c4;
+  background:rgba(12,65,196,.1);
+  font-size:.72rem;
+  font-weight:700;
+  white-space:nowrap;
+}
+@media (max-width:720px){
+  .integration-sync-card{ align-items:stretch; flex-direction:column; }
+  .integration-sync-card .primary{ width:100%; }
+}

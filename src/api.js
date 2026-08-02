@@ -8,6 +8,13 @@ import { addDecisionLog, listDecisionLog } from "./services/decisionLogService.j
 import { addMarketingTask, listMarketingTasks, taskFromAction, updateMarketingTask } from "./services/tasksService.js";
 import { buildDashboard } from "./services/dashboardService.js";
 import { addCalendarEvent, archiveCalendarEvent, listCalendarEvents, seedDefaultSeasons, updateCalendarEvent } from "./services/calendarService.js";
+import {
+  combineManualAndIntegratedLeads,
+  combineManualAndIntegratedReality,
+  getIntegrationStatus,
+  listIntegratedLeads,
+  syncConnectedData,
+} from "./services/integrationService.js";
 
 function requireAuth() {
   if (!currentUser()) throw new Error("Inicia sesion con Google para leer y guardar en Firebase.");
@@ -153,7 +160,11 @@ export const API = {
   },
   async listLeads(filters = {}) {
     requireAuth();
-    return { ok: true, rows: await listLeads(filters) };
+    const [manual, integrated] = await Promise.all([
+      listLeads(filters),
+      listIntegratedLeads(filters),
+    ]);
+    return { ok: true, rows: combineManualAndIntegratedLeads(manual, integrated) };
   },
   async queryMetrics(filters = {}) {
     requireAuth();
@@ -164,9 +175,26 @@ export const API = {
     requireAuth();
     const campaigns = await listCampaigns();
     const metrics = await listMetrics(campaigns);
-    const reality = await listMusicalaReality(filters);
+    const [manualReality, integrated] = await Promise.all([
+      listMusicalaReality(filters),
+      listIntegratedLeads(filters),
+    ]);
+    const reality = combineManualAndIntegratedReality(manualReality, integrated);
     const settings = await getMarketingSettings();
-    return buildDashboard(campaigns, metrics, reality, filters, settings);
+    const dashboard = buildDashboard(campaigns, metrics, reality, filters, settings);
+    dashboard.integration = {
+      automaticContacts: integrated.length,
+      campaignsWithAutomaticData: new Set(integrated.map((lead) => lead.campaign_id).filter(Boolean)).size,
+    };
+    return dashboard;
+  },
+  async syncConnectedData() {
+    requireAuth();
+    return { ok: true, summary: await syncConnectedData() };
+  },
+  async getIntegrationStatus() {
+    requireAuth();
+    return { ok: true, status: await getIntegrationStatus() };
   },
   async listMusicalaReality(filters = {}) {
     requireAuth();

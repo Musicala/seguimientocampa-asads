@@ -11,6 +11,7 @@ export const ALLOWED_EMAILS = [
   "catalina.medina.leal@gmail.com",
   "imusicala@gmail.com",
   "musicalaasesor@gmail.com",
+  "adminmusicala@gmail.com",
 ];
 
 let authReadyResolve;

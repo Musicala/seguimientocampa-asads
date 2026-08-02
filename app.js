@@ -66,6 +66,7 @@
     wireConfig_();
     wireMetricsHistoryFilter_();
     wireCalendar_();
+    wireIntegration_();
 
     // Opciones por defecto para que los desplegables no esten vacios antes de conectar.
     App.options = normalizeOptions_(null);
@@ -85,11 +86,59 @@
 
     // Dashboard por defecto
     if (connected) {
+      await refreshIntegrationStatus_();
       await refreshDashboard_();
     }
 
     App.booted = true;
     if (connected) UIx.toast('Listo', 'success');
+  }
+
+  function wireIntegration_() {
+    const button = $('btnSyncConnectedData');
+    if (!button) return;
+    button.addEventListener('click', async () => {
+      const status = $('integrationSyncStatus');
+      const original = button.textContent;
+      try {
+        button.disabled = true;
+        button.textContent = 'Conectando…';
+        if (status) status.textContent = 'Leyendo clientes de la Base, estados e ingresos de RIP…';
+        const result = await safeCall_(() => API.syncConnectedData());
+        if (!result?.ok) throw new Error(result?.error || 'No se pudo completar la sincronización.');
+        renderIntegrationStatus_(result.summary);
+        await refreshDashboard_();
+        if (document.getElementById('view-leads')?.classList.contains('active')) await refreshLeads_();
+        UIx.toast('Datos reales sincronizados', 'success');
+      } catch (err) {
+        if (status) status.textContent = `${err?.message || err} Si el navegador bloqueó la segunda ventana de Google, pulsa sincronizar otra vez.`;
+        UIx.toast(err?.message || String(err), 'error');
+      } finally {
+        button.disabled = false;
+        button.textContent = original;
+      }
+    });
+  }
+
+  async function refreshIntegrationStatus_() {
+    if (!API?.getIntegrationStatus) return;
+    const result = await safeCall_(() => API.getIntegrationStatus());
+    if (result?.ok) renderIntegrationStatus_(result.status);
+  }
+
+  function renderIntegrationStatus_(summary) {
+    const status = $('integrationSyncStatus');
+    if (!status) return;
+    if (!summary) {
+      status.textContent = 'Todavía no se ha sincronizado la Base de datos con RIP.';
+      return;
+    }
+    const rawDate = summary.syncedAt?.toDate?.() || summary.syncedAt || null;
+    const date = rawDate ? new Date(rawDate) : null;
+    const when = date && !Number.isNaN(date.getTime())
+      ? date.toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })
+      : 'fecha no disponible';
+    status.textContent = `Actualizado ${when}: ${intFmt(summary.uniqueContacts || 0)} contacto(s) único(s), ${intFmt(summary.enrolledContacts || 0)} matriculado(s), ${intFmt(summary.activeContacts || 0)} activo(s) y ${moneyCOP(summary.totalAttributedRevenue || 0)} de ingreso atribuido.`;
   }
 
   function wireCampaignSorting_() {
@@ -2551,6 +2600,7 @@
         <td>
           <div>${escapeHtml(nameFor(l.campaign_id))}</div>
           ${l.platform ? `<div class="muted" style="font-size:12px">${escapeHtml(l.platform)}</div>` : ''}
+          ${l.sourceLabel ? `<div class="muted" style="font-size:12px">${escapeHtml(l.sourceLabel)}</div>` : ''}
         </td>
         <td>
           <div>${escapeHtml(l.service || '-')}</div>
@@ -2559,13 +2609,16 @@
         <td>
           <span class="lead-status">${escapeHtml(l.status || 'Lead nuevo')}</span>
           ${l.status === 'Perdido' && l.lossReason ? `<div class="muted" style="font-size:12px">${escapeHtml(l.lossReason)}</div>` : ''}
+          ${l.activeStatus ? `<div class="muted" style="font-size:12px">Estado actual: ${escapeHtml(l.activeStatus)}</div>` : ''}
         </td>
         <td>
           ${l.nextAction ? escapeHtml(l.nextAction) : '<span class="muted">-</span>'}
           ${l.nextContactDate ? `<div class="muted" style="font-size:12px">${formatShortDate_(l.nextContactDate)}</div>` : ''}
         </td>
         <td style="text-align:right">${parseNum(l.paidValue) > 0 ? moneyCOP(l.paidValue) : '<span class="muted">-</span>'}</td>
-        <td style="text-align:right"><button class="btn-mini" data-action="edit-lead" data-id="${escapeHtml(l.id)}">Editar</button></td>
+        <td style="text-align:right">${l.readOnly
+          ? '<span class="integration-source-badge">Automático</span>'
+          : `<button class="btn-mini" data-action="edit-lead" data-id="${escapeHtml(l.id)}">Editar</button>`}</td>
       </tr>
     `).join('');
 
