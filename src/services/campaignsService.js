@@ -14,10 +14,12 @@ const campaignsRef = collection(db, "campaigns");
 
 export async function listCampaigns(options = {}) {
   const includeArchived = options.includeArchived === true;
+  const activeOnly = options.activeOnly === true;
   const snap = await getDocs(campaignsRef);
   return snap.docs
     .map((item) => fromFirestoreCampaign(item.id, item.data()))
     .filter((campaign) => includeArchived || campaign.archived !== true)
+    .filter((campaign) => !activeOnly || campaign.status === "activa")
     .sort((a, b) => sortDateValue(b) - sortDateValue(a));
 }
 

@@ -1288,7 +1288,14 @@
       byId.set(id, merged);
     });
 
-    return Array.from(byId.values());
+    return Array.from(byId.values()).filter(campaignIsActive_);
+  }
+
+  // El catálogo operativo y sus selectores solo muestran campañas activas.
+  // Los datos de campañas cerradas se mantienen en el dashboard y sus reportes.
+  function campaignIsActive_(campaign) {
+    const status = String(campaign?.status || campaign?.estado || '').trim().toLowerCase();
+    return status === 'activa' || status === 'activo';
   }
 
   // ---------- METRICS ----------

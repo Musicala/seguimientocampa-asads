@@ -32,7 +32,7 @@ export const API = {
   async boot() {
     await waitForAuthReady();
     requireAuth();
-    const campaigns = await listCampaigns();
+    const campaigns = await listCampaigns({ activeOnly: true });
     return {
       ok: true,
       params: {
@@ -44,7 +44,7 @@ export const API = {
   },
   async listCampaigns() {
     requireAuth();
-    return { ok: true, campaigns: await listCampaigns() };
+    return { ok: true, campaigns: await listCampaigns({ activeOnly: true }) };
   },
   async saveCampaign(payload) {
     requireAuth();
