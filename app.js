@@ -22,6 +22,7 @@
     continuationSource: null,
     leads: [],
     editingLead: null,
+    leadAutoSyncTimer: null,
     budgetDistribution: [],
     calendarEvents: [],
     calendarMonth: null,
@@ -104,7 +105,7 @@
         button.disabled = true;
         button.textContent = 'Conectando…';
         if (status) status.textContent = 'Leyendo clientes de la Base, estados e ingresos de RIP…';
-        const result = await safeCall_(() => API.syncConnectedData());
+        const result = await safeCall_(() => API.syncConnectedData({ interactive: true }));
         if (!result?.ok) throw new Error(result?.error || 'No se pudo completar la sincronización.');
         renderIntegrationStatus_(result.summary);
         await refreshDashboard_();
@@ -2102,7 +2103,12 @@
 
         if (view === 'dashboard') await refreshDashboard_();
         if (view === 'metrics') await refreshRecentMetrics_();
-        if (view === 'leads') await refreshLeads_();
+        if (view === 'leads') {
+          await refreshLeads_();
+          // No abre ventanas de acceso: actualiza solo si Base y RIP ya fueron autorizadas.
+          syncLeadsFromConnectedData_({ interactive: false });
+          startLeadAutoSync_();
+        }
         if (view === 'services') await refreshServices_();
         if (view === 'funnel') await refreshFunnel_();
         if (view === 'budget') await refreshBudget_();
@@ -2451,6 +2457,59 @@
     });
     const cancel = $('leadCancelEditBtn');
     if (cancel) cancel.addEventListener('click', resetLeadForm_);
+    const sync = $('btnSyncLeads');
+    if (sync) sync.addEventListener('click', () => syncLeadsFromConnectedData_({ interactive: true }));
+  }
+
+  async function syncLeadsFromConnectedData_({ interactive = false } = {}) {
+    const button = $('btnSyncLeads');
+    const hint = $('leadSyncHint');
+    if (!API?.syncConnectedData || button?.disabled) return false;
+    const original = button?.textContent || 'Actualizar desde Base';
+    try {
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'Actualizando…';
+      }
+      if (hint) hint.textContent = 'Revisando matrículas, estados y pagos de la Base y RIP…';
+      // No usamos safeCall_ aquí: la sincronización silenciosa no debe mostrar
+      // una alerta si este navegador todavía no autorizó los proyectos externos.
+      const result = await API.syncConnectedData({ interactive });
+      if (!result?.ok) throw new Error(result?.error || 'No se pudo actualizar la información conectada.');
+      renderIntegrationStatus_(result.summary);
+      await refreshLeads_();
+      if (hint) hint.textContent = leadSyncText_(result.summary);
+      if (interactive) UIx.toast('Leads actualizados desde la Base', 'success');
+      return true;
+    } catch (err) {
+      if (hint) hint.textContent = err?.code === 'integration/login-required'
+        ? 'Pulsa “Actualizar desde Base” una vez para autorizar la conexión en este navegador.'
+        : `No se pudo actualizar automáticamente: ${err?.message || err}`;
+      if (interactive) UIx.toast(err?.message || String(err), 'error');
+      return false;
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+  }
+
+  function leadSyncText_(summary) {
+    const rawDate = summary?.syncedAt?.toDate?.() || summary?.syncedAt || null;
+    const date = rawDate ? new Date(rawDate) : null;
+    const when = date && !Number.isNaN(date.getTime())
+      ? date.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })
+      : 'ahora';
+    return `Actualizado ${when}: las matrículas y pagos se leen de la Base; no necesitas volver a marcar el lead aquí.`;
+  }
+
+  function startLeadAutoSync_() {
+    if (App.leadAutoSyncTimer) clearInterval(App.leadAutoSyncTimer);
+    App.leadAutoSyncTimer = setInterval(() => {
+      if (document.hidden || !document.getElementById('view-leads')?.classList.contains('active')) return;
+      syncLeadsFromConnectedData_({ interactive: false });
+    }, 5 * 60 * 1000);
   }
 
   function readLeadForm_() {
@@ -2624,7 +2683,7 @@
         </td>
         <td style="text-align:right">${parseNum(l.paidValue) > 0 ? moneyCOP(l.paidValue) : '<span class="muted">-</span>'}</td>
         <td style="text-align:right">${l.readOnly
-          ? '<span class="integration-source-badge">Automático</span>'
+          ? '<span class="integration-source-badge">Base + RIP</span>'
           : `<button class="btn-mini" data-action="edit-lead" data-id="${escapeHtml(l.id)}">Editar</button>`}</td>
       </tr>
     `).join('');

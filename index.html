@@ -494,7 +494,13 @@
       </div>
 
       <div class="card lead-list-card">
-        <h3>Leads registrados</h3>
+        <div class="lead-list-heading">
+          <div>
+            <h3>Leads registrados</h3>
+            <p id="leadSyncHint" class="form-help">Las matrículas y pagos marcados en la Base se reflejan aquí automáticamente.</p>
+          </div>
+          <button type="button" id="btnSyncLeads" class="btn-mini">Actualizar desde Base</button>
+        </div>
 
         <div class="lead-filters">
           <label>Campaña<select id="leadFilterCampaign"><option value="">Todas</option></select></label>

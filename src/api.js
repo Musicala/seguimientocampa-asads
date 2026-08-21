@@ -188,9 +188,9 @@ export const API = {
     };
     return dashboard;
   },
-  async syncConnectedData() {
+  async syncConnectedData(options = {}) {
     requireAuth();
-    return { ok: true, summary: await syncConnectedData() };
+    return { ok: true, summary: await syncConnectedData(options) };
   },
   async getIntegrationStatus() {
     requireAuth();

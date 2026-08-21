@@ -1612,6 +1612,16 @@ button.cal-otro, .calendar-dot.cal-otro { background: #7f8c8d; }
   .budget-planner-head { grid-template-columns: 1fr; }
   .budget-planner-kpis { grid-template-columns: 1fr; }
 }
+
+.lead-list-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lead-list-heading h3 { margin-bottom: 4px; }
+.lead-list-heading .form-help { margin: 0 0 12px; max-width: 560px; }
 .integration-sync-card{
   display:flex;
   align-items:center;
@@ -1636,4 +1646,6 @@ button.cal-otro, .calendar-dot.cal-otro { background: #7f8c8d; }
 @media (max-width:720px){
   .integration-sync-card{ align-items:stretch; flex-direction:column; }
   .integration-sync-card .primary{ width:100%; }
+  .lead-list-heading{ align-items:stretch; flex-direction:column; }
+  .lead-list-heading .btn-mini{ width:100%; }
 }

@@ -33,9 +33,11 @@ const RIP_CONFIG = {
 const integratedRef = collection(db, "integratedLeads");
 const statusRef = doc(db, "integrationSyncs", "baseRip");
 
-export async function syncConnectedData() {
-  const base = await connectProject("base-datos", BASE_CONFIG);
-  const rip = await connectProject("rip-musicala", RIP_CONFIG);
+// La primera sincronizacion puede requerir la ventana de Google. Despues, la
+// vista de leads puede refrescarse en silencio con las sesiones ya autorizadas.
+export async function syncConnectedData({ interactive = true } = {}) {
+  const base = await connectProject("base-datos", BASE_CONFIG, { interactive });
+  const rip = await connectProject("rip-musicala", RIP_CONFIG, { interactive });
 
   const [baseRows, payments, computed] = await Promise.all([
     loadBaseRows(base.db),
@@ -125,10 +127,15 @@ export function combineManualAndIntegratedReality(manual = [], integrated = []) 
   return [...automaticReality, ...manualFallback];
 }
 
-async function connectProject(name, config) {
+async function connectProject(name, config, { interactive = true } = {}) {
   const app = getApps().find((item) => item.name === name) || initializeApp(config, name);
   const auth = getAuth(app);
   if (!auth.currentUser) {
+    if (!interactive) {
+      const error = new Error("Inicia una sincronización manual una vez para autorizar la Base y RIP en este navegador.");
+      error.code = "integration/login-required";
+      throw error;
+    }
     const provider = new GoogleAuthProvider();
     const hint = authUserPayload()?.email;
     if (hint) provider.setCustomParameters({ login_hint: hint });
