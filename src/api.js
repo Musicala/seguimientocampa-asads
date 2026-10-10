@@ -3,7 +3,8 @@ import { archiveCampaign, deleteCampaign, listCampaigns, reactivateCampaign, sav
 import { addMetric, archiveMetric, listMetrics, saveMetric } from "./services/metricsService.js";
 import { addMusicalaReality, listMusicalaReality, normalizeReality } from "./services/realityService.js";
 import { addLead, listLeads, updateLead } from "./services/leadsService.js";
-import { getCampaignOptions, getGlobalBudget, getMarketingSettings, saveCampaignOptions, saveMarketingSettings, setBudgetDistribution, setGlobalBudget } from "./services/settingsService.js";
+import { getCampaignOptions, getGlobalBudget, getMarketingSettings, getWhatsappNumber, saveCampaignOptions, saveMarketingSettings, saveWhatsappNumber, setBudgetDistribution, setGlobalBudget } from "./services/settingsService.js";
+import { normalizeRefCode, parseAdIds, suggestRefCode, syncCampaignsToCrm, whatsappLink } from "./services/crmService.js";
 import { addDecisionLog, listDecisionLog } from "./services/decisionLogService.js";
 import { addMarketingTask, listMarketingTasks, taskFromAction, updateMarketingTask } from "./services/tasksService.js";
 import { buildDashboard } from "./services/dashboardService.js";
@@ -50,9 +51,32 @@ export const API = {
   },
   async saveCampaign(payload) {
     requireAuth();
-    const id = await saveCampaign(payload);
-    return { ok: true, id, campaign_id: id };
+    const clean = {
+      ...payload,
+      meta_ad_ids: parseAdIds(payload.meta_ad_ids),
+      ref_code: normalizeRefCode(payload.ref_code),
+    };
+    const id = await saveCampaign(clean);
+    // Y al CRM, para que reconozca a los contactos de esta campaña. Si falla
+    // (p. ej. falta autorizar el CRM), la campaña igual queda guardada aquí y
+    // se vuelve a mandar en la próxima sincronización.
+    let crmError = "";
+    try {
+      await syncCampaignsToCrm([{ ...clean, campaign_id: id, id }]);
+    } catch (error) {
+      crmError = error?.message || "No se pudo avisar al CRM.";
+    }
+    return { ok: true, id, campaign_id: id, crmError };
   },
+  async getWhatsappNumber() {
+    requireAuth();
+    return { ok: true, number: await getWhatsappNumber() };
+  },
+  async saveWhatsappNumber(value) {
+    requireAuth();
+    return { ok: true, number: await saveWhatsappNumber(value) };
+  },
+  campaignHelpers: { suggestRefCode, whatsappLink, normalizeRefCode },
   async pauseCampaign(id) {
     requireAuth();
     await updateCampaignStatus(id, "pausada");

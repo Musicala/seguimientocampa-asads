@@ -11,6 +11,8 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase.js";
 import { authUserPayload } from "./authService.js";
+import { listCampaigns } from "./campaignsService.js";
+import { CRM_ATTRIBUTION_START, loadCrmAttribution, syncCampaignsToCrm } from "./crmService.js";
 
 const BASE_CONFIG = {
   apiKey: "AIzaSyD5cHVQiZzYACLYoWEfOrTO37hDoMfpsDg",
@@ -39,17 +41,31 @@ export async function syncConnectedData({ interactive = true } = {}) {
   const base = await connectProject("base-datos", BASE_CONFIG, { interactive });
   const rip = await connectProject("rip-musicala", RIP_CONFIG, { interactive });
 
-  const [baseRows, payments, computed] = await Promise.all([
+  // Primero se le manda al CRM el catálogo al día: así lo que devuelve ya
+  // viene con cada anuncio y cada código traducido a su campaña.
+  const campaigns = await listCampaigns();
+  await syncCampaignsToCrm(campaigns, { interactive });
+
+  const [baseRows, payments, computed, crmRows] = await Promise.all([
     loadBaseRows(base.db),
     loadCollection(rip.db, "registro"),
     loadCollection(rip.db, "studentComputed"),
+    loadCrmAttribution({ desde: CRM_ATTRIBUTION_START, interactive }),
   ]);
 
   const paymentByStudent = buildPaymentIndex(payments);
   const computedByStudent = buildComputedIndex(computed);
-  const candidates = baseRows
-    .map((row) => buildIntegratedLead(row, paymentByStudent, computedByStudent))
-    .filter(Boolean);
+  // Hasta el día en que el CRM empezó a marcar solo, manda lo que marcó la
+  // asistente en la Base de datos; desde ese día, el CRM. Así no se cuenta a
+  // nadie dos veces.
+  const candidates = [
+    ...baseRows
+      .map((row) => buildIntegratedLead(row, paymentByStudent, computedByStudent))
+      .filter((lead) => lead && lead.date && lead.date < CRM_ATTRIBUTION_START),
+    ...crmRows
+      .map((row) => buildCrmLead(row, paymentByStudent, computedByStudent, campaigns))
+      .filter(Boolean),
+  ];
   markAttributionOwners(candidates);
 
   const existing = await getDocs(integratedRef);
@@ -82,7 +98,10 @@ export async function syncConnectedData({ interactive = true } = {}) {
     computedStudentsRead: computed.length,
     syncedAt: serverTimestamp(),
     syncedBy: authUserPayload(),
-    sourceProjects: ["db-musicala", "rip-musicala"],
+    sourceProjects: ["db-musicala", "rip-musicala", "musicala-crm"],
+    crmContacts: crmRows.length,
+    crmContactsWithCampaign: crmRows.filter((row) => row.campaignId).length,
+    crmToReview: crmRows.filter((row) => row.revisar).length,
   };
   await writeStatus(summary);
   return { ...summary, syncedAt: new Date() };
@@ -234,6 +253,60 @@ function buildIntegratedLead(row, paymentByStudent, computedByStudent) {
     lastPaymentDate: String(payment?.lastPaymentDate || ""),
     attributionCapturedAt: millis(attribution.capturedAt),
     attributionUpdatedAt: millis(attribution.updatedAt),
+    countsForAttribution: true,
+    duplicateOf: "",
+  };
+}
+
+/**
+ * Un contacto del CRM, con la misma forma que los de la Base de datos.
+ *
+ * Solo cuentan los que llegaron por una campaña pagada (con `campaignId`):
+ * los orgánicos y «sin identificar» también vienen, pero no se le cargan a
+ * ninguna campaña. Los pagos salen del RIP por `studentId`, igual que antes.
+ */
+function buildCrmLead(row, paymentByStudent, computedByStudent, campaigns = []) {
+  if (!row?.campaignId) return null;
+  const studentId = (row.studentIds || []).map(canonicalStudentId).find(Boolean) || "";
+  const payment = studentId ? paymentByStudent.get(studentId) : null;
+  const computed = studentId ? computedByStudent.get(studentId) : null;
+  const paidValue = number(payment?.revenue);
+  const campaign = campaigns.find((c) => String(c.campaign_id || c.id) === String(row.campaignId));
+  const stage = row.desenlace === "matriculado" ? "enrolled"
+    : ["sin_opcion", "no_es_cliente"].includes(row.desenlace) ? "not_interested"
+      : "new";
+
+  return {
+    id: safeId(`crm__${row.id}`),
+    source: "crm",
+    sourceLabel: "CRM + RIP",
+    sourceSheetId: "",
+    sourceRowId: String(row.id || ""),
+    readOnly: true,
+    date: String(row.fecha || ""),
+    originType: "paid_ads",
+    campaign_id: String(row.campaignId),
+    campaignName: String(row.campana || campaign?.nombre || ""),
+    platform: String(row.plataforma || campaign?.platform || "").toLowerCase(),
+    attributionMethod: String(row.metodo || ""),
+    name: String(row.nombre || ""),
+    contact: String(row.contacto || ""),
+    service: String(row.servicio || campaign?.servicio || ""),
+    offerType: String(campaign?.tipo_oferta || ""),
+    profile: "",
+    status: leadStatus(stage, studentId, paidValue),
+    crmStage: stage,
+    responsible: "",
+    nextAction: "",
+    nextContactDate: "",
+    studentId,
+    enrollmentStatus: "",
+    activeStatus: String(computed?.clasificacionFinal || ""),
+    paidValue,
+    paymentCount: number(payment?.payments),
+    lastPaymentDate: String(payment?.lastPaymentDate || ""),
+    attributionCapturedAt: Date.parse(`${row.fecha}T00:00:00-05:00`) || 0,
+    attributionUpdatedAt: 0,
     countsForAttribution: true,
     duplicateOf: "",
   };

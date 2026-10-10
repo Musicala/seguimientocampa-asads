@@ -1663,3 +1663,10 @@ button.cal-otro, .calendar-dot.cal-otro { background: #7f8c8d; }
   .lead-list-heading{ align-items:stretch; flex-direction:column; }
   .lead-list-heading .btn-mini{ width:100%; }
 }
+
+/* Reconocimiento automático en el CRM (formulario de campaña). */
+.crm-attribution { border: 1px solid var(--line, #e2e5ee); border-radius: 12px; padding: 12px 14px; margin: 12px 0; display: grid; gap: 10px; }
+.crm-attribution legend { font-weight: 700; padding: 0 6px; }
+.crm-attribution label { display: flex; flex-direction: column; gap: 4px; }
+.crm-link { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.crm-link code { flex: 1 1 260px; word-break: break-all; font-size: 0.82rem; background: rgba(0,0,0,0.04); padding: 6px 8px; border-radius: 8px; }

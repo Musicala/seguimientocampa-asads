@@ -604,11 +604,65 @@
 
     closeCampaignModal_();
     UIx.toast(payload._isEdit ? 'Campaña actualizada' : 'Campaña guardada', 'success');
+    if (res.crmError) UIx.toast(`Guardada aquí, pero el CRM no se enteró: ${res.crmError}. Usa «Sincronizar» para reintentar.`, 'warning');
     await refreshCampaigns_();
     await refreshDashboard_();
   }
 
+  // --- Reconocimiento automático en el CRM -------------------------------
+  // El código va dentro del mensaje que deja escrito el botón; el CRM lo lee
+  // y sabe la campaña. El número se guarda una vez para todas.
+  async function loadWaNumber_() {
+    const input = $('campaignWaNumber');
+    if (!input || input.dataset.loaded) return;
+    input.dataset.loaded = '1';
+    const res = await safeCall_(() => API.getWhatsappNumber());
+    if (res?.ok && res.number) input.value = res.number;
+  }
+
+  function updateWaLink_() {
+    const helpers = API?.campaignHelpers;
+    const out = $('campaignWaLink');
+    if (!helpers || !out) return;
+    const link = helpers.whatsappLink($('campaignWaNumber')?.value, $('campaignRefCode')?.value);
+    out.textContent = link || 'Escribe el código y el número para generarlo.';
+    out.dataset.link = link;
+  }
+
+  function wireCrmFields_() {
+    const code = $('campaignRefCode');
+    if (!code || code.dataset.wired) return;
+    code.dataset.wired = '1';
+    code.addEventListener('input', () => {
+      code.value = API.campaignHelpers.normalizeRefCode(code.value);
+      updateWaLink_();
+    });
+    // Sugerencia a partir del nombre, solo si el código está vacío.
+    $('campaignName')?.addEventListener('blur', () => {
+      if (!code.value && $('campaignName').value) {
+        code.value = API.campaignHelpers.suggestRefCode($('campaignName').value);
+        updateWaLink_();
+      }
+    });
+    $('campaignWaNumber')?.addEventListener('change', async (ev) => {
+      updateWaLink_();
+      const res = await safeCall_(() => API.saveWhatsappNumber(ev.target.value));
+      if (res?.ok) UIx.toast('Número de WhatsApp guardado', 'success');
+    });
+    $('campaignWaCopy')?.addEventListener('click', async () => {
+      const link = $('campaignWaLink')?.dataset.link;
+      if (!link) return UIx.toast('Falta el código o el número', 'warning');
+      try {
+        await navigator.clipboard.writeText(link);
+        UIx.toast('Enlace copiado', 'success');
+      } catch (_) {
+        UIx.toast('No se pudo copiar; selecciónalo a mano', 'warning');
+      }
+    });
+  }
+
   function openCampaignModal_(campaign = null) {
+    wireCrmFields_();
     const modal = $('campaignModal');
     const title = $('campaignModalTitle');
     if (!modal) return;
@@ -643,6 +697,9 @@
     setCampaignFormValue_('campaignCplTarget', campaign?.cpl_target || '');
     setCampaignFormValue_('campaignBudgetNotes', campaign?.budget_notes || '');
     setCampaignFormValue_('campaignNotes', campaign?.notas || '');
+    setCampaignFormValue_('campaignMetaAdIds', (campaign?.meta_ad_ids || []).join(', '));
+    setCampaignFormValue_('campaignRefCode', campaign?.ref_code || '');
+    loadWaNumber_().then(updateWaLink_);
 
     modal.classList.remove('hidden');
     modal.setAttribute('aria-hidden', 'false');
@@ -697,6 +754,8 @@
       cobro_total: parseNum($('campaignTotalCharge')?.value),
       responsable: '',
       notas: strForm_('campaignNotes'),
+      meta_ad_ids: strForm_('campaignMetaAdIds'),
+      ref_code: strForm_('campaignRefCode'),
       continua_de: App.continuationSource || '',
     };
   }

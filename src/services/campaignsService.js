@@ -171,6 +171,9 @@ export function toFirestoreCampaign(payload = {}) {
     reactivation_mode: payload.reactivation_mode || "",
     aprendizaje_previo: payload.aprendizaje_previo || "",
     hipotesis: payload.hipotesis || "",
+    // Para que el CRM reconozca solo a los contactos (ver crmService.js).
+    meta_ad_ids: Array.isArray(payload.meta_ad_ids) ? payload.meta_ad_ids : [],
+    ref_code: payload.ref_code || "",
   };
 }
 

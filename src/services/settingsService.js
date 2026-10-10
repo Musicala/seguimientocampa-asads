@@ -142,6 +142,22 @@ export async function getMarketingSettings() {
   return { ...DEFAULT_SETTINGS, globalMonthlyBudget: legacy };
 }
 
+/** El número de WhatsApp de Musicala, para armar los enlaces con código. */
+export async function getWhatsappNumber() {
+  try {
+    const snap = await getDoc(doc(db, ...SETTINGS_PATH));
+    return String(snap.data()?.whatsappNumber || "");
+  } catch (_) {
+    return "";
+  }
+}
+
+export async function saveWhatsappNumber(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  await setDoc(doc(db, ...SETTINGS_PATH), { whatsappNumber: digits, updatedAt: serverTimestamp(), updatedBy: authUserPayload() }, { merge: true });
+  return digits;
+}
+
 export async function saveMarketingSettings(payload = {}) {
   const clean = {};
   for (const key of Object.keys(DEFAULT_SETTINGS)) {

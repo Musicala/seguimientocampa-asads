@@ -6,7 +6,7 @@
 
 <title>Seguimiento Marketing · Musicala</title>
 
-<link rel="stylesheet" href="./styles.css?v=20260704-2" />
+<link rel="stylesheet" href="./styles.css?v=20261010-1" />
 
 </head>
 
@@ -805,6 +805,31 @@
       </div>
     </div>
 
+    <fieldset class="crm-attribution">
+      <legend>Reconocimiento automático en el CRM</legend>
+      <p class="field-hint">Con esto el CRM sabe solo de qué campaña viene cada persona que escribe por WhatsApp. Nadie tiene que marcarlo a mano.</p>
+      <label>
+        Ids de anuncios de Meta
+        <textarea id="campaignMetaAdIds" rows="2" placeholder="Ej: 120210000000001, 120210000000002"></textarea>
+        <small class="field-hint">En el Administrador de anuncios de Meta, columna «Identificador del anuncio». Uno o varios, separados por coma. Solo sirve para anuncios que abren WhatsApp («Enviar mensaje»).</small>
+      </label>
+      <label>
+        Código de la campaña
+        <input id="campaignRefCode" type="text" maxlength="24" placeholder="Ej: PIANO-G1" />
+        <small class="field-hint">Va dentro del mensaje que el botón deja escrito. Úsalo en Google Ads, la página web, QR o cualquier botón que no sea un anuncio de Meta.</small>
+      </label>
+      <label>
+        Número de WhatsApp de Musicala
+        <input id="campaignWaNumber" type="tel" placeholder="Ej: 57 3XX XXX XXXX" />
+        <small class="field-hint">Se guarda una sola vez para todas las campañas.</small>
+      </label>
+      <div class="crm-link">
+        <span>Enlace para el botón:</span>
+        <code id="campaignWaLink">Escribe el código y el número para generarlo.</code>
+        <button type="button" id="campaignWaCopy" class="secondary">Copiar</button>
+      </div>
+    </fieldset>
+
     <label>
       Notas
       <textarea id="campaignNotes" rows="3"></textarea>
@@ -998,8 +1023,8 @@
 <script src="./state.js?v=20260424-2"></script>
 <script src="./ui.js?v=20260901-1"></script>
 <script src="./charts.js?v=20260527-7"></script>
-<script type="module" src="./src/main.js?v=20260704-1"></script>
-<script src="./app.js?v=20260901-1"></script>
+<script type="module" src="./src/main.js?v=20261010-1"></script>
+<script src="./app.js?v=20261010-1"></script>
 
 </body>
 </html>
