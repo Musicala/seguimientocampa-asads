@@ -145,6 +145,7 @@
   function wireCampaignSorting_() {
     const select = $('campaignSort');
     const direction = $('campaignSortDirection');
+    const historyToggle = $('campaignShowHistory');
     if (!select || !direction) return;
 
     select.value = localStorage.getItem('campaignSort') || 'created';
@@ -171,6 +172,13 @@
       syncDirection();
       render();
     });
+    if (historyToggle) {
+      historyToggle.checked = localStorage.getItem('campaignShowHistory') === 'true';
+      historyToggle.addEventListener('change', () => {
+        localStorage.setItem('campaignShowHistory', String(historyToggle.checked));
+        render();
+      });
+    }
     syncDirection();
   }
 
@@ -212,11 +220,11 @@
 
     // Fill selects
     if (window.UI?.fillCampaignSelect) {
-      UI.fillCampaignSelect('metricCampaign', App.campaigns);
-      UI.fillCampaignSelect('realityCampaign', App.campaigns);
+      UI.fillCampaignSelect('metricCampaign', activeCampaigns_());
+      UI.fillCampaignSelect('realityCampaign', activeCampaigns_());
     } else {
-      fillSelectFallback_($('metricCampaign'), App.campaigns);
-      fillSelectFallback_($('realityCampaign'), App.campaigns);
+      fillSelectFallback_($('metricCampaign'), activeCampaigns_());
+      fillSelectFallback_($('realityCampaign'), activeCampaigns_());
     }
     fillBudgetCampaignSelect_();
     fillMetricsHistoryFilter_();
@@ -1111,7 +1119,7 @@
     const sel = $('budgetCampaignSelect');
     if (!sel) return;
     sel.innerHTML = '<option value="">Selecciona...</option>';
-    App.campaigns.forEach(c => {
+    activeCampaigns_().forEach(c => {
       const opt = document.createElement('option');
       opt.value = c.campaign_id || '';
       opt.textContent = c.nombre || c.campaign_id || '';
@@ -1253,10 +1261,10 @@
     if (window.UI?.renderCampaignTable) UI.renderCampaignTable(App.campaigns);
     else renderCampaignTableFallback_(App.campaigns);
 
-    if (window.UI?.fillCampaignSelect) UI.fillCampaignSelect('metricCampaign', App.campaigns);
-    else fillSelectFallback_($('metricCampaign'), App.campaigns);
-    if (window.UI?.fillCampaignSelect) UI.fillCampaignSelect('realityCampaign', App.campaigns);
-    else fillSelectFallback_($('realityCampaign'), App.campaigns);
+    if (window.UI?.fillCampaignSelect) UI.fillCampaignSelect('metricCampaign', activeCampaigns_());
+    else fillSelectFallback_($('metricCampaign'), activeCampaigns_());
+    if (window.UI?.fillCampaignSelect) UI.fillCampaignSelect('realityCampaign', activeCampaigns_());
+    else fillSelectFallback_($('realityCampaign'), activeCampaigns_());
     fillBudgetCampaignSelect_();
     fillMetricsHistoryFilter_();
     fillLeadCampaignSelects_();
@@ -1289,14 +1297,18 @@
       byId.set(id, merged);
     });
 
-    return Array.from(byId.values()).filter(campaignIsActive_);
+    return Array.from(byId.values());
   }
 
-  // El catálogo operativo y sus selectores solo muestran campañas activas.
-  // Los datos de campañas cerradas se mantienen en el dashboard y sus reportes.
+  // Mantiene los formularios operativos enfocados en lo que está corriendo,
+  // aunque la tabla pueda abrir el historial completo cuando se necesite.
   function campaignIsActive_(campaign) {
     const status = String(campaign?.status || campaign?.estado || '').trim().toLowerCase();
     return status === 'activa' || status === 'activo';
+  }
+
+  function activeCampaigns_() {
+    return (App.campaigns || []).filter(campaignIsActive_);
   }
 
   // ---------- METRICS ----------
@@ -2374,11 +2386,12 @@
   // ---------- LEADS ----------
   function fillLeadCampaignSelects_() {
     const campaigns = App.campaigns || [];
+    const activeCampaigns = activeCampaigns_();
     const form = $('leadCampaign');
     if (form) {
       const current = form.value;
       form.innerHTML = '<option value="">Sin campaña / directo</option>';
-      campaigns.forEach(c => {
+      activeCampaigns.forEach(c => {
         const opt = document.createElement('option');
         opt.value = c.campaign_id || '';
         opt.textContent = `${c.nombre || c.campaign_id || ''}${c.canal ? ` - ${c.canal}` : ''}`;

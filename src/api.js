@@ -32,7 +32,9 @@ export const API = {
   async boot() {
     await waitForAuthReady();
     requireAuth();
-    const campaigns = await listCampaigns({ activeOnly: true });
+    // El historial también alimenta la vista de campañas; la interfaz decide
+    // cuándo mostrarlo para que las campañas activas sigan siendo lo primero.
+    const campaigns = await listCampaigns();
     return {
       ok: true,
       params: {
@@ -44,7 +46,7 @@ export const API = {
   },
   async listCampaigns() {
     requireAuth();
-    return { ok: true, campaigns: await listCampaigns({ activeOnly: true }) };
+    return { ok: true, campaigns: await listCampaigns() };
   },
   async saveCampaign(payload) {
     requireAuth();

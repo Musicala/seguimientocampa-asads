@@ -143,12 +143,23 @@ const UI = (() => {
     const tb = $("campaignTable");
     if (!tb) return;
 
-    const list = sortCampaigns_(campaigns || []);
+    const allCampaigns = campaigns || [];
+    const showHistory = $("campaignShowHistory")?.checked === true;
+    const isActive = campaign => {
+      const status = String(campaign?.status || campaign?.estado || "").trim().toLocaleLowerCase("es");
+      return status === "activa" || status === "activo";
+    };
+    const activeCount = allCampaigns.filter(isActive).length;
+    const list = sortCampaigns_(showHistory ? allCampaigns : allCampaigns.filter(isActive));
     const count = $("campaignCount");
-    if (count) count.textContent = `${list.length} ${list.length === 1 ? "campaña" : "campañas"}`;
+    if (count) {
+      count.textContent = showHistory
+        ? `${activeCount} activa${activeCount === 1 ? "" : "s"} · ${list.length} en total`
+        : `${activeCount} activa${activeCount === 1 ? "" : "s"}`;
+    }
 
     if (!list.length) {
-      tb.innerHTML = `<tr><td colspan="7" class="muted">Aun no hay campanas.</td></tr>`;
+      tb.innerHTML = `<tr><td colspan="7" class="muted">No hay campañas activas. Activa “Mostrar historial” para consultar las anteriores.</td></tr>`;
       return;
     }
 

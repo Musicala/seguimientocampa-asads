@@ -342,6 +342,20 @@ main {
   font-weight: 600;
 }
 
+.campaign-history-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.campaign-history-toggle input {
+  accent-color: var(--primary);
+}
+
 .campaign-sort-controls {
   display: flex;
   align-items: center;
