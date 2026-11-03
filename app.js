@@ -22,7 +22,7 @@
     continuationSource: null,
     leads: [],
     editingLead: null,
-    leadAutoSyncTimer: null,
+    integrationTimer: null,
     budgetDistribution: [],
     calendarEvents: [],
     calendarMonth: null,
@@ -67,7 +67,6 @@
     wireConfig_();
     wireMetricsHistoryFilter_();
     wireCalendar_();
-    wireIntegration_();
 
     // Opciones por defecto para que los desplegables no esten vacios antes de conectar.
     App.options = normalizeOptions_(null);
@@ -89,36 +88,42 @@
     if (connected) {
       await refreshIntegrationStatus_();
       await refreshDashboard_();
+      startIntegrationUpdates_();
     }
 
     App.booted = true;
     if (connected) UIx.toast('Listo', 'success');
   }
 
-  function wireIntegration_() {
-    const button = $('btnSyncConnectedData');
-    if (!button) return;
-    button.addEventListener('click', async () => {
-      const status = $('integrationSyncStatus');
-      const original = button.textContent;
+  function startIntegrationUpdates_() {
+    if (App.integrationTimer) clearInterval(App.integrationTimer);
+    if (App.integrationVisibility) document.removeEventListener('visibilitychange', App.integrationVisibility);
+    const update = async () => {
+      if (document.hidden || App.integrationRefreshing) return;
+      App.integrationRefreshing = true;
       try {
-        button.disabled = true;
-        button.textContent = 'Conectando…';
-        if (status) status.textContent = 'Leyendo clientes de la Base, estados e ingresos de RIP…';
-        const result = await safeCall_(() => API.syncConnectedData({ interactive: true }));
-        if (!result?.ok) throw new Error(result?.error || 'No se pudo completar la sincronización.');
-        renderIntegrationStatus_(result.summary);
-        await refreshDashboard_();
-        if (document.getElementById('view-leads')?.classList.contains('active')) await refreshLeads_();
-        UIx.toast('Datos reales sincronizados', 'success');
-      } catch (err) {
-        if (status) status.textContent = `${err?.message || err} Si el navegador bloqueó la segunda ventana de Google, pulsa sincronizar otra vez.`;
-        UIx.toast(err?.message || String(err), 'error');
+        const result = await API.getIntegrationStatus();
+        if (!result?.ok) throw new Error(result?.error || 'No se pudo consultar la actualización.');
+        renderIntegrationStatus_(result.status);
+        const version = result.status?.snapshotId;
+        if (version && version !== App.integrationVersion) {
+          await refreshDashboard_();
+          if ($('view-leads')?.classList.contains('active')) await refreshLeads_();
+          if ($('view-services')?.classList.contains('active')) await refreshServices_();
+          if ($('view-funnel')?.classList.contains('active')) await refreshFunnel_();
+          App.integrationVersion = version;
+        }
+      } catch (_) {
+        const status = $('integrationSyncStatus');
+        if (status) status.textContent = 'No se pudo comprobar la actualización. Mostramos los últimos datos disponibles; volveremos a intentarlo automáticamente.';
       } finally {
-        button.disabled = false;
-        button.textContent = original;
+        App.integrationRefreshing = false;
       }
-    });
+    };
+    App.integrationTimer = setInterval(update, 60 * 1000);
+    App.integrationVisibility = update;
+    document.addEventListener('visibilitychange', update);
+    update();
   }
 
   async function refreshIntegrationStatus_() {
@@ -131,15 +136,24 @@
     const status = $('integrationSyncStatus');
     if (!status) return;
     if (!summary) {
-      status.textContent = 'Todavía no se ha sincronizado la Base de datos con RIP.';
+      status.textContent = 'Preparando la primera actualización automática de CRM, Base y RIP…';
       return;
     }
     const rawDate = summary.syncedAt?.toDate?.() || summary.syncedAt || null;
     const date = rawDate ? new Date(rawDate) : null;
     const when = date && !Number.isNaN(date.getTime())
-      ? date.toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })
+      ? date.toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Bogota' })
       : 'fecha no disponible';
-    status.textContent = `Actualizado ${when}: ${intFmt(summary.uniqueContacts || 0)} contacto(s) único(s), ${intFmt(summary.enrolledContacts || 0)} matriculado(s), ${intFmt(summary.activeContacts || 0)} activo(s) y ${moneyCOP(summary.totalAttributedRevenue || 0)} de ingreso atribuido.`;
+    status.textContent = `Datos actualizados ${when}. ${intFmt(summary.uniqueContacts || 0)} contacto(s) único(s), ${intFmt(summary.enrolledContacts || 0)} matriculado(s), ${intFmt(summary.activeContacts || 0)} activo(s) y ${moneyCOP(summary.totalAttributedRevenue || 0)} de ingreso atribuido.`;
+    const stale = !date || Date.now() - date.getTime() > 15 * 60 * 1000;
+    if (summary.state === 'error') {
+      status.textContent += ` Pendiente de actualizar ${summary.failedSource || 'las fuentes'}. Conservamos la última actualización completa.`;
+    } else if (stale) {
+      status.textContent += ' La actualización está tardando más de lo habitual.';
+    } else {
+      status.textContent += ' Actualización automática cada 5 minutos.';
+    }
+
   }
 
   function wireCampaignSorting_() {
@@ -2176,9 +2190,7 @@
         if (view === 'metrics') await refreshRecentMetrics_();
         if (view === 'leads') {
           await refreshLeads_();
-          // No abre ventanas de acceso: actualiza solo si Base y RIP ya fueron autorizadas.
-          syncLeadsFromConnectedData_({ interactive: false });
-          startLeadAutoSync_();
+          await refreshIntegrationStatus_();
         }
         if (view === 'services') await refreshServices_();
         if (view === 'funnel') await refreshFunnel_();
@@ -2529,59 +2541,6 @@
     });
     const cancel = $('leadCancelEditBtn');
     if (cancel) cancel.addEventListener('click', resetLeadForm_);
-    const sync = $('btnSyncLeads');
-    if (sync) sync.addEventListener('click', () => syncLeadsFromConnectedData_({ interactive: true }));
-  }
-
-  async function syncLeadsFromConnectedData_({ interactive = false } = {}) {
-    const button = $('btnSyncLeads');
-    const hint = $('leadSyncHint');
-    if (!API?.syncConnectedData || button?.disabled) return false;
-    const original = button?.textContent || 'Actualizar desde Base';
-    try {
-      if (button) {
-        button.disabled = true;
-        button.textContent = 'Actualizando…';
-      }
-      if (hint) hint.textContent = 'Revisando matrículas, estados y pagos de la Base y RIP…';
-      // No usamos safeCall_ aquí: la sincronización silenciosa no debe mostrar
-      // una alerta si este navegador todavía no autorizó los proyectos externos.
-      const result = await API.syncConnectedData({ interactive });
-      if (!result?.ok) throw new Error(result?.error || 'No se pudo actualizar la información conectada.');
-      renderIntegrationStatus_(result.summary);
-      await refreshLeads_();
-      if (hint) hint.textContent = leadSyncText_(result.summary);
-      if (interactive) UIx.toast('Leads actualizados desde la Base', 'success');
-      return true;
-    } catch (err) {
-      if (hint) hint.textContent = err?.code === 'integration/login-required'
-        ? 'Pulsa “Actualizar desde Base” una vez para autorizar la conexión en este navegador.'
-        : `No se pudo actualizar automáticamente: ${err?.message || err}`;
-      if (interactive) UIx.toast(err?.message || String(err), 'error');
-      return false;
-    } finally {
-      if (button) {
-        button.disabled = false;
-        button.textContent = original;
-      }
-    }
-  }
-
-  function leadSyncText_(summary) {
-    const rawDate = summary?.syncedAt?.toDate?.() || summary?.syncedAt || null;
-    const date = rawDate ? new Date(rawDate) : null;
-    const when = date && !Number.isNaN(date.getTime())
-      ? date.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })
-      : 'ahora';
-    return `Actualizado ${when}: las matrículas y pagos se leen de la Base; no necesitas volver a marcar el lead aquí.`;
-  }
-
-  function startLeadAutoSync_() {
-    if (App.leadAutoSyncTimer) clearInterval(App.leadAutoSyncTimer);
-    App.leadAutoSyncTimer = setInterval(() => {
-      if (document.hidden || !document.getElementById('view-leads')?.classList.contains('active')) return;
-      syncLeadsFromConnectedData_({ interactive: false });
-    }, 5 * 60 * 1000);
   }
 
   function readLeadForm_() {

@@ -15,5 +15,15 @@
   },
   "firestore": {
     "rules": "firestore.rules"
+  },
+  "functions": {
+    "source": "functions",
+    "codebase": "ads",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "test",
+      "catalog"
+    ]
   }
 }

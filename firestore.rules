@@ -42,13 +42,20 @@ service cloud.firestore {
     }
 
     match /integratedLeads/{leadId} {
-      allow read, create, update: if isAllowedUser();
+      allow read: if isAllowedUser();
+      allow write: if false;
       allow delete: if false;
     }
 
     match /integrationSyncs/{syncId} {
-      allow read, create, update: if isAllowedUser();
+      allow read: if isAllowedUser();
+      allow write: if false;
       allow delete: if false;
+    }
+
+    match /integrationSnapshots/{snapshotId}/{document=**} {
+      allow read: if isAllowedUser();
+      allow write: if false;
     }
 
     match /settings/{docId} {
