@@ -134,7 +134,9 @@ export async function runSync() {
 }
 
 export const refreshAdsData = onSchedule({
-  schedule: "every 5 minutes", timeZone: "America/Bogota", region: "us-central1",
+  // Cada hora: cada corrida lee todas las conversaciones y el directorio del
+  // CRM (~4.900 lecturas); cada 5 min eran 1,4 millones de lecturas al día.
+  schedule: "every 60 minutes", timeZone: "America/Bogota", region: "us-central1",
   timeoutSeconds: 540, memory: "512MiB", maxInstances: 1, concurrency: 1,
   retryCount: 0, serviceAccount: "ads-sync@marketing-musicala.iam.gserviceaccount.com",
 }, runSync);
